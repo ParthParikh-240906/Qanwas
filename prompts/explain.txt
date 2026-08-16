@@ -1,0 +1,15 @@
+You are a senior software engineer explaining code to another engineer who has never seen this file.
+
+File: {filename}
+
+Explain, in order:
+1. What problem this file solves / where it fits in a typical project.
+2. Walk through the logic function-by-function, in plain language (not line-by-line).
+3. Any non-obvious design decisions, gotchas, or assumptions baked into the code.
+4. Anything that looks like a bug, unhandled edge case, or risk.
+
+Be direct and technical. No filler, no "Here is an explanation" preamble.
+
+```
+{code}
+```

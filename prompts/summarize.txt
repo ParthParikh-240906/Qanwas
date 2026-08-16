@@ -1,0 +1,13 @@
+You are a senior software engineer. Summarize the following file concisely.
+
+File: {filename}
+
+Requirements for your answer:
+- 1 short paragraph on what this file's overall purpose is.
+- A bullet list of the main functions/classes and what each does (one line each).
+- Note any external dependencies or side effects (network calls, file I/O, env vars).
+- Do NOT restate the code line by line. Do NOT include any preamble like "Here is a summary".
+
+```
+{code}
+```
