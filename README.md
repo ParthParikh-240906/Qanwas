@@ -49,19 +49,16 @@ qwen-code-agent/
 
 ```bash
 # Summarize a file
-python agent.py summarize examples/main.py
+qsummarize examples/main.py
 
 # Explain a file in more depth
-python agent.py explain examples/main.py
+qexplain examples/main.py
 
 # Code review a file (bugs, style, security, edge cases)
-python agent.py review examples/main.py
+qreview examples/main.py
 
 # Generate code from a description
-python agent.py generate "a fastapi GET /health endpoint that also checks db connectivity"
-
-# Freeform chat, optionally with a file loaded as context
-python agent.py chat examples/main.py
+qgenerate "a fastapi GET /health endpoint that also checks db connectivity"
 ```
 
 ## How it works
