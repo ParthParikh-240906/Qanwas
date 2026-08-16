@@ -23,6 +23,8 @@ Config (model name, host, temperature, etc.) lives in config.py.
 
 import sys
 import json
+import time
+import threading
 import argparse
 from pathlib import Path
 
@@ -35,6 +37,33 @@ from config import (
     MAX_FILE_CHARS,
     PROMPTS_DIR,
 )
+
+
+# --------------------------------------------------------------------------
+# Progress animation
+# --------------------------------------------------------------------------
+#
+# NOTE: Ollama does not expose real-time progress while it's processing
+# (prefilling) the prompt - there's no API signal for "on token 500 of 4000".
+# So this is a cosmetic "still working" indicator, not a genuine progress
+# tracker. It runs until the first real token streams back, then disappears
+# and actual output takes over.
+
+BAR_WIDTH = 40
+
+
+def _progress_animation(stop_event: threading.Event, label: str = "thinking"):
+    i = 0
+    while not stop_event.is_set():
+        filled = i % (BAR_WIDTH + 1)
+        bar = "=" * filled + (">" if filled < BAR_WIDTH else "")
+        sys.stdout.write(f"\r{label} [{bar:<{BAR_WIDTH + 1}}]")
+        sys.stdout.flush()
+        i += 1
+        time.sleep(0.12)
+    # clear the line once stopped
+    sys.stdout.write("\r" + " " * (len(label) + BAR_WIDTH + 4) + "\r")
+    sys.stdout.flush()
 
 
 # --------------------------------------------------------------------------
@@ -51,32 +80,50 @@ def call_ollama(prompt: str, temperature: float = DEFAULT_TEMPERATURE, stream: b
         "options": {"temperature": temperature},
     }
 
+    stop_event = threading.Event()
+    spinner = threading.Thread(target=_progress_animation, args=(stop_event,), daemon=True)
+    spinner.start()
+
     try:
         resp = requests.post(url, json=payload, stream=stream, timeout=300)
         resp.raise_for_status()
     except requests.exceptions.ConnectionError:
-        print(f"\n[error] Couldn't reach Ollama at {OLLAMA_HOST}.")
+        stop_event.set()
+        spinner.join()
+        print(f"[error] Couldn't reach Ollama at {OLLAMA_HOST}.")
         print("        Is it running? Try: ollama serve")
         sys.exit(1)
     except requests.exceptions.HTTPError as e:
-        print(f"\n[error] Ollama returned an error: {e}")
+        stop_event.set()
+        spinner.join()
+        print(f"[error] Ollama returned an error: {e}")
         print(f"        Is '{MODEL_NAME}' pulled? Try: ollama pull {MODEL_NAME}")
         sys.exit(1)
 
     full_text = []
+    first_token = True
     if stream:
         for line in resp.iter_lines():
             if not line:
                 continue
             chunk = json.loads(line)
             token = chunk.get("response", "")
+            if first_token and token:
+                stop_event.set()
+                spinner.join()
+                first_token = False
             print(token, end="", flush=True)
             full_text.append(token)
             if chunk.get("done"):
                 print()  # trailing newline
+        if not stop_event.is_set():
+            stop_event.set()
+            spinner.join()
         return "".join(full_text)
     else:
         data = resp.json()
+        stop_event.set()
+        spinner.join()
         print(data.get("response", ""))
         return data.get("response", "")
 
@@ -100,6 +147,8 @@ def read_file_safely(filepath: str) -> str:
         sys.exit(1)
 
     code = path.read_text(errors="replace")
+    total_lines = code.count("\n") + 1
+    print(f"[read {filepath}: {total_lines} lines, {len(code)} chars]")
 
     if len(code) > MAX_FILE_CHARS:
         print(
