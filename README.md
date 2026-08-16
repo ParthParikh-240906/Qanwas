@@ -1,5 +1,7 @@
 # qwen-code-agent
 
+**V1.1**
+
 A minimal local agent that wraps `qwen2.5-coder:7b` running in Ollama. It solves
 the "you have to paste the whole file for the model to do anything useful"
 problem by reading files and building precise, templated prompts for you.
@@ -74,6 +76,22 @@ This is exactly the "paste the whole file into the prompt" workflow you were
 already doing manually — just automated and with prompt wording that's been
 shaped to get consistent, non-rambly output from a 7B instruct model.
 
+When you run a file-based command, you'll see output like:
+
+```
+[read main.py: 87 lines, 2103 chars]
+--- explaining main.py ---
+
+thinking [=========================>              ]
+```
+
+The `====>` bar animates while Ollama processes the prompt, then clears and
+the real streamed output takes over as soon as the first token arrives.
+This is a cosmetic "still working, not frozen" indicator — Ollama's API
+doesn't expose real progress during prompt processing, so there's no way
+to show a genuine "line 23 of 50" style counter. The line/char count printed
+right after reading the file, however, is real, and reflects your actual file.
+
 ## Extending it
 
 - **New command**: add a `prompts/yourcommand.txt` template, a `cmd_yourcommand`
@@ -93,3 +111,16 @@ Qwen2.5-Coder-7B (and small local models generally) respond much better to:
   reduces rambling/hallucinated APIs.
 - Not being asked to "go read a file" — always paste the content in, which is
   what this agent automates.
+
+## Changelog
+
+**V1.1**
+- Print real line/char count when a file is read (e.g. `[read main.py: 87 lines, 2103 chars]`)
+- Add animated `====>` progress bar while waiting on the model's first token; clears automatically once streaming output begins
+- Note: the bar is cosmetic ("still working" signal), not true progress — Ollama's API doesn't expose prefill/prompt-processing progress
+
+**V1**
+- Initial release: `summarize`, `explain`, `review`, `generate`, `chat` commands
+- Templated prompts in `prompts/` for consistent, non-rambly 7B output
+- Config-driven model/host/temperature settings
+
