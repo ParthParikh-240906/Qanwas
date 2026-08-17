@@ -2,3 +2,4 @@ requests>=2.31.0
 ddgs>=8.1.1
 beautifulsoup4>=4.15.0
 lxml>=6.1.1
+groq

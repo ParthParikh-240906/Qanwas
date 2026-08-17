@@ -26,6 +26,7 @@ import time
 import threading
 import argparse
 from pathlib import Path
+from groq_client import GroqClient
 
 import requests
 import web_tools
@@ -286,6 +287,97 @@ You may reference sources inline as [1], [2], etc.
     
     return answer
 
+def cmd_generate_fast(args):
+    """Generate code using GPT-OSS-20B via Groq"""
+    description = " ".join(args.description)
+    
+    if not description.strip():
+        print("[error] Description cannot be empty.")
+        return
+    
+    try:
+        groq = GroqClient(model="openai/gpt-oss-20b")
+    except ValueError as e:
+        print(f"[error] {e}")
+        return
+    
+    prompt = f"""Generate code for the following request:
+
+{description}
+
+Provide complete, production-ready code with:
+- Proper error handling
+- Type hints where applicable
+- Comments explaining complex logic
+- Any necessary imports
+
+Output ONLY the code, no explanations."""
+    
+    print(f"--- generating with GPT-OSS-20B: {description} ---\n")
+    response = groq.generate(prompt, max_tokens=4000, temperature=0.2)
+    print(response)
+
+
+def cmd_build(args):
+    """Multi-agent orchestration: break down, execute, combine"""
+    user_prompt = " ".join(args.prompt)
+    
+    if not user_prompt.strip():
+        print("[error] Prompt cannot be empty.")
+        return
+    
+    print(f"\n{'='*50}")
+    print(f"QBUILD ORCHESTRATION")
+    print(f"Request: {user_prompt}")
+    print(f"{'='*50}\n")
+    
+    try:
+        orchestrator = GroqClient(model="openai/gpt-oss-120b")
+        combiner = GroqClient(model="openai/gpt-oss-20b")
+    except ValueError as e:
+        print(f"[error] {e}")
+        return
+    
+    # Step 1: Break down
+    print("[1/3] Breaking down request into subtasks...")
+    subtasks = orchestrator.orchestrate(user_prompt)
+    
+    for i, task in enumerate(subtasks, 1):
+        print(f"  Task {i}: [{task['type']}] {task['query'][:60]}...")
+    
+    # Step 2: Execute
+    print(f"\n[2/3] Executing {len(subtasks)} subtasks...")
+    results = []
+    for i, task in enumerate(subtasks, 1):
+        print(f"\n  Executing task {i}/{len(subtasks)}: {task['type']}")
+        
+        if task['type'] == 'search':
+            search_results = web_tools.search_and_fetch(task['query'])
+            context = web_tools.build_context_from_results(search_results)
+            results.append({'task': task, 'output': context})
+            print(f"  ✓ Found {len(search_results)} sources")
+        
+        elif task['type'] == 'generate':
+            gen_prompt = f"Generate code for: {task['query']}\n\nOutput ONLY code, no explanations."
+            output = combiner.generate(gen_prompt, max_tokens=3000)
+            results.append({'task': task, 'output': output})
+            print(f"  ✓ Generated {len(output)} chars")
+        
+        elif task['type'] == 'research':
+            research_results = web_tools.search_and_fetch(task['query'])
+            context = web_tools.build_context_from_results(research_results)
+            results.append({'task': task, 'output': context})
+            print(f"  ✓ Researched {len(research_results)} sources")
+    
+    # Step 3: Combine
+    print(f"\n[3/3] Combining results...")
+    final_answer = combiner.combine_results(user_prompt, results)
+    
+    print(f"\n{'='*50}")
+    print(f"FINAL RESPONSE")
+    print(f"{'='*50}\n")
+    print(final_answer)
+
 # --------------------------------------------------------------------------
 # CLI wiring
 # --------------------------------------------------------------------------
@@ -315,6 +407,14 @@ def main():
     p_research = sub.add_parser("qresearch", help="Deep research on a topic")
     p_research.add_argument("question", nargs="+", help="Topic to research")
     p_research.set_defaults(func=cmd_web_research)
+
+    p_gen_fast = sub.add_parser("qgenerate-fast", help="Generate code using GPT-OSS-20B")
+    p_gen_fast.add_argument("description", nargs="+")
+    p_gen_fast.set_defaults(func=cmd_generate_fast)
+    
+    p_build = sub.add_parser("qbuild", help="Multi-agent orchestration for complex tasks")
+    p_build.add_argument("prompt", nargs="+")
+    p_build.set_defaults(func=cmd_build)
 
     args = parser.parse_args()
     args.func(args)

@@ -1,20 +1,39 @@
 # qwen-code-agent
 
-**V2.0**
-A minimal local agent that wraps `qwen2.5-coder:7b` running in Ollama. It solves
-the "you have to paste the whole file for the model to do anything useful"
-problem by reading files and building precise, templated prompts for you.
+**V3.0**
 
-Now with web search capabilities — the agent can search DuckDuckGo, fetch
-web pages, and ground answers in real sources. This solves the knowledge
-cutoff problem: your local 7B model might not know about new frameworks,
-but it can search for current information and synthesize grounded answers.
+A multi-agent AI coding assistant that orchestrates multiple models to solve
+complex tasks. Built on the foundation of V2 (local Qwen + web search), V3
+adds GPT-OSS models via Groq for intelligent task decomposition, fast code
+generation, and context-aware synthesis.
 
-No RAG, no framework, no vector DB — just file I/O + prompt templates + an
-HTTP call to your local Ollama server + web search. This is the right scope for
-single-file / few-file usage. If you later work across a whole multi-file
-repo where everything can't fit in context, that's when a hybrid
-(vector + keyword) RAG pipeline starts to earn its keep.
+The agent now has three tiers of intelligence:
+- **GPT-OSS-120B** — The Brain: breaks complex requests into subtasks
+- **GPT-OSS-20B** — The Worker: fast code generation and result combination
+- **Qwen2.5-Coder-7B** — The Local: file operations, basic tasks, zero cost
+
+No RAG, no framework, no vector DB — just smart prompt engineering,
+multi-model orchestration, and web grounding. This hits the sweet spot
+between capability and simplicity.
+
+## Architecture
+
+```
+User Request
+    ↓
+[GPT-OSS-120B Orchestrator]
+    ↓
+Breaks into: Search + Research + Generate
+    ↓
+┌─────────────┬──────────────┬─────────────┐
+│  Web Search │  Web Research│  GPT-OSS-20B│
+│  (DuckDuckGo)│ (DuckDuckGo) │  (Generate) │
+└─────────────┴──────────────┴─────────────┘
+    ↓              ↓              ↓
+[GPT-OSS-20B Combiner - uses all context]
+    ↓
+Final Response with Code + Sources
+```
 
 ## Project structure
 
@@ -22,9 +41,12 @@ repo where everything can't fit in context, that's when a hybrid
 qwen-code-agent/
 ├── README.md
 ├── requirements.txt
-├── config.py
-├── agent.py
-├── web_tools.py
+├── config.py              # model settings, API keys, search config
+├── agent.py                # CLI entrypoint (the actual agent)
+├── web_tools.py             # web search + content fetching
+├── groq_client.py           # GPT-OSS integration via Groq
+├── .env                    # API keys (NOT committed to git)
+├── .gitignore
 ├── prompts/
 │   ├── summarize.txt
 │   ├── explain.txt
@@ -47,21 +69,44 @@ qwen-code-agent/
    pip install -r requirements.txt
    ```
 
-3. Check `config.py` — confirm `MODEL_NAME` matches exactly what `ollama list`
-   shows (tags matter, e.g. `qwen2.5-coder:7b` vs `qwen2.5-coder:7b-instruct-q4_K_M`).
+3. Get a free Groq API key:
+   - Go to https://console.groq.com
+   - Sign up / login
+   - Navigate to API Keys
+   - Create a new key
 
-4. Set up shell aliases (add to `~/.zshrc` or `~/.bashrc`):
+4. Create a `.env` file:
    ```bash
-   alias qsummarize='python agent.py summarize'
-   alias qexplain='python agent.py explain'
-   alias qgenerate='python agent.py generate'
-   alias qsearch='python agent.py qsearch'
-   alias qresearch='python agent.py qresearch'
-   alias qchat='python agent.py chat'
+   touch .env
+   ```
+   Add your key:
+   ```env
+   GROQ_API_KEY=gsk_your_actual_key_here
+   GROQ_MODEL=openai/gpt-oss-20b
+   GROQ_ORCHESTRATOR_MODEL=openai/gpt-oss-120b
+   USE_GROQ_FOR_GENERATE=true
+   ```
+
+5. Set up shell aliases (add to `~/.zshrc` or `~/.bashrc`):
+   ```bash
+   # Local Qwen commands
+   alias qsummarize='python3 ~/projects/qwen-code-agent/agent.py summarize'
+   alias qexplain='python3 ~/projects/qwen-code-agent/agent.py explain'
+   alias qgenerate='python3 ~/projects/qwen-code-agent/agent.py generate'
+
+   # Web search commands
+   alias qsearch='python3 ~/projects/qwen-code-agent/agent.py qsearch'
+   alias qresearch='python3 ~/projects/qwen-code-agent/agent.py qresearch'
+
+   # GPT-OSS commands
+   alias qgenerate-fast='python3 ~/projects/qwen-code-agent/agent.py qgenerate-fast'
+   alias qbuild='python3 ~/projects/qwen-code-agent/agent.py qbuild'
    ```
    Then reload: `source ~/.zshrc`
 
 ## Usage
+
+### Local Qwen 7B (free, always available)
 
 ```bash
 # Summarize a file
@@ -71,126 +116,118 @@ qsummarize examples/main.py
 qexplain examples/main.py
 
 # Generate code from a description
-qgenerate "a fastapi GET /health endpoint that also checks db connectivity"
+qgenerate "a fastapi GET /health endpoint"
+```
 
-# Quick search - answers grounded in real web sources
+### Web search (DuckDuckGo, free)
+
+```bash
+# Quick search - grounded in real web sources
 qsearch "what is langchain"
 
-# Deep research - comprehensive analysis on a topic
-qresearch "compare FastAPI vs Flask for microservices"
+# Deep research - comprehensive analysis
+qresearch "compare FastAPI vs Flask"
+```
+
+### GPT-OSS via Groq (free tier, 200K tokens/day)
+
+```bash
+# Fast generation with GPT-OSS-20B
+qgenerate-fast "a FastAPI endpoint with rate limiting"
+
+# Multi-agent orchestration
+qbuild "Create a REST API with user authentication"
 ```
 
 ## How it works
 
-### File-based commands (`summarize`, `explain`)
+### Multi-agent orchestration (`qbuild`)
 
-Each command maps to a `.txt` template in `prompts/`. The agent reads your
-target file, drops its contents into the template via `str.format`, and POSTs
-the result to Ollama's `/api/generate` endpoint, streaming tokens back to
-your terminal as they arrive.
+The flagship V3 command that combines all models:
 
-This is exactly the "paste the whole file into the prompt" workflow you were
-already doing manually — just automated and with prompt wording that's been
-shaped to get consistent, non-rambly output from a 7B instruct model.
+1. **Orchestration** — GPT-OSS-120B breaks the request into 3 subtasks:
+   - Search: find current best practices
+   - Research: deep dive into technical details
+   - Generate: create code informed by search/research
 
-### Web search commands (`qsearch`, `qresearch`)
+2. **Execution** — Each subtask runs with the appropriate tool:
+   - Web search fetches current information
+   - Research digs deeper into specific aspects
+   - Generation uses context from search/research
 
-The search flow is:
+3. **Combination** — GPT-OSS-20B synthesizes everything into a coherent
+   response with code examples, sources, and alternatives.
 
-1. **Search** — Query DuckDuckGo (free, no API key) for relevant results
-2. **Fetch** — Download top pages and extract readable text with BeautifulSoup
-3. **Ground** — Build a prompt containing the original question + fetched content
-4. **Answer** — Qwen synthesizes an answer using ONLY the provided web content
-5. **Cite** — Display clickable source URLs below the answer
+### Model routing
 
-This solves the "knowledge cutoff" problem: Qwen2.5-Coder-7B doesn't know
-about post-2024 tools, but `qsearch` can fetch current information and
-ground the answer in real sources instead of hallucinating.
+| Task | Model | Why |
+|---|---|---|
+| Orchestration | GPT-OSS-120B | Smart task decomposition |
+| Code generation | GPT-OSS-20B | Fast, high-quality output |
+| Result combination | GPT-OSS-20B | Quick synthesis |
+| File operations | Qwen 7B | Local, free, sufficient |
+| Web search | DuckDuckGo | Free, no API key needed |
 
-When you run a file-based command, you'll see output like:
+### Token economics
 
-```
-[read main.py: 87 lines, 2103 chars]
---- explaining main.py ---
+A typical `qbuild` uses ~6K tokens:
+- Orchestration: ~1K tokens
+- Generation: ~3K tokens
+- Combination: ~2K tokens
 
-thinking [=========================>              ]
-```
-
-The `====>` bar animates while Ollama processes the prompt, then clears and
-the real streamed output takes over as soon as the first token arrives.
-This is a cosmetic "still working, not frozen" indicator — Ollama's API
-doesn't expose real progress during prompt processing, so there's no way
-to show a genuine "line 23 of 50" style counter. The line/char count printed
-right after reading the file, however, is real, and reflects your actual file.
-
-For web search, you'll see:
-
-```
-[searching web: what is langchain]
-[fetching: https://en.wikipedia.org/wiki/LangChain]
-[fetching: https://www.ibm.com/think/topics/langchain]
-
---- answering: what is langchain ---
-
-LangChain is an open-source framework...
-
-==================================================
-SOURCES:
-[1] LangChain - Wikipedia
-    https://en.wikipedia.org/wiki/LangChain
-[2] What Is LangChain? | IBM
-    https://www.ibm.com/think/topics/langchain
-```
+With Groq's free tier (200K tokens/day), you can run **~33 `qbuild`
+operations per day** at zero cost.
 
 ## Config
 
 In `config.py`:
 
-- `MODEL_NAME` — Ollama model tag (default: `qwen2.5-coder:7b`)
-- `OLLAMA_HOST` — Ollama server URL (default: `http://localhost:11434`)
-- `DEFAULT_TEMPERATURE` — model temperature (default: `0.2`)
+- `MODEL_NAME` — Ollama model (default: `qwen2.5-coder:7b`)
+- `OLLAMA_HOST` — Ollama server URL
+- `DEFAULT_TEMPERATURE` — local model temperature
 - `MAX_FILE_CHARS` — max file size before truncation
-- `MAX_SEARCH_RESULTS` — max web search results (default: `5`)
-- `MAX_PAGE_CHARS` — max characters to fetch per page (default: `5000`)
-- `SEARCH_TIMEOUT` — HTTP timeout for page fetches (seconds)
-- `TRUSTED_DOMAINS` — preferred domains to prioritize in search results
+- `MAX_SEARCH_RESULTS` — web search results (default: `5`)
+- `MAX_PAGE_CHARS` — max chars per page fetch
+- `SEARCH_TIMEOUT` — page fetch timeout
+- `TRUSTED_DOMAINS` — prioritized domains in search
+
+In `.env`:
+
+- `GROQ_API_KEY` — your Groq API key
+- `GROQ_MODEL` — fast model (default: `openai/gpt-oss-20b`)
+- `GROQ_ORCHESTRATOR_MODEL` — smart model (default: `openai/gpt-oss-120b`)
 
 ## Extending it
 
-- **New command**: add a `prompts/yourcommand.txt` template, a `cmd_yourcommand`
-  function in `agent.py`, and register it in the `argparse` subparsers block.
-- **Bigger files / multi-file repos**: swap `read_file_safely` for a chunking +
-  retrieval step (tree-sitter for AST-aware chunking, `rank_bm25` +
-  a local embedding model for hybrid retrieval) before building the prompt.
-- **Different model**: just change `MODEL_NAME` in `config.py` — nothing else
-  needs to change, since it's a generic Ollama call.
-- **Better search**: swap DuckDuckGo for Brave Search API or Tavily if you
-  need higher-quality results or want to avoid rate limits.
-
-## Notes on prompt design
-
-Qwen2.5-Coder-7B (and small local models generally) respond much better to:
-- Explicit output format instructions ("output ONLY code", "bullet list, one
-  line each") rather than open-ended asks.
-- Low temperature (0.1–0.3) for code tasks — keeps output deterministic and
-  reduces rambling/hallucinated APIs.
-- Not being asked to "go read a file" — always paste the content in, which is
-  what this agent automates.
-- Being told to ground answers in provided context rather than relying on
-  training data — critical for web search to avoid hallucination.
+- **New command**: add a `cmd_yourcommand` function in `agent.py`, register
+  in the `argparse` subparsers block.
+- **New model**: add to `config.py` and create a client wrapper.
+- **Better orchestration**: customize the task breakdown prompt in
+  `groq_client.py`.
+- **Parallel execution**: use `asyncio` to run subtasks concurrently.
+- **More subtask types**: add "test", "refactor", "document" to the
+  orchestrator.
 
 ## Known limitations
 
-- **7B model context window** — Long web pages get truncated. Consider
-  chunking + retrieval for multi-page research.
-- **Search quality** — DuckDuckGo results can be noisy. Trusted domain
-  filtering helps but isn't perfect.
-- **Page fetching** — Some sites block scrapers. The agent gracefully
-  falls back to using the search snippet when full content isn't available.
-- **Rate limits** — The agent sleeps 0.3s between page fetches to be
-  polite to servers. Don't remove this.
+- **Rate limits** — Groq free tier: 8K tokens/min, 200K tokens/day.
+- **7B context window** — Long files get truncated.
+- **Search quality** — DuckDuckGo results can be noisy.
+- **Page fetching** — Some sites block scrapers (403 errors).
+- **Orchestration variability** — 120B might occasionally create duplicate
+  tasks.
 
 ## Changelog
+
+**V3.0**
+- Add GPT-OSS-120B orchestration via Groq
+- Add GPT-OSS-20B for fast generation
+- Add `qbuild` multi-agent command
+- Add `qgenerate-fast` for quick GPT-OSS generation
+- Context-aware generation (search/research inform code)
+- Multi-model routing (120B for planning, 20B for execution)
+- Terminal-friendly output (no tables)
+- `.env` support for API keys
 
 **V2.0**
 - Add web search (`qsearch`) and deep research (`qresearch`) commands
@@ -199,7 +236,6 @@ Qwen2.5-Coder-7B (and small local models generally) respond much better to:
 - Display clickable source URLs below answers
 - Trusted domain filtering for higher-quality results
 - Graceful fallback to search snippets when full page content isn't available
-- Removed review, kept hallucinating 
 
 **V1.1**
 - Print real line/char count when a file is read (e.g. `[read main.py: 87 lines, 2103 chars]`)
