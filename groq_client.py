@@ -13,18 +13,26 @@ class GroqClient:
         self.model = model or config.GROQ_MODEL
     
     def generate(self, prompt: str, max_tokens: int = 4000, temperature: float = 0.3) -> str:
-        """Generate response from Groq model"""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"[Groq error: {e}]")
-            return ""
+        """Generate response from Groq model with retry"""
+        import time
+        
+        for attempt in range(3):  # Try 3 times
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                content = response.choices[0].message.content
+                if content and len(content.strip()) > 0:
+                    return content
+            except Exception as e:
+                print(f"[Groq error (attempt {attempt+1}): {e}]")
+                time.sleep(2)  # Wait before retry
+        
+        print("[error] Failed to generate after 3 attempts")
+        return ""
     
     def orchestrate(self, user_prompt: str) -> list:
         """Break down user prompt into subtasks with forced variety"""

@@ -43,8 +43,8 @@ class ProjectBuilder:
         print(f"{'='*60}\n")
     
     def plan_project(self, user_request: str) -> dict:
-        """GPT-OSS-120B plans the entire project"""
-        prompt = f"""You are an expert software architect. Plan a project for this request:
+    """GPT-OSS-120B plans the entire project"""
+    prompt = f"""You are an expert software architect. Plan a project for this request:
 
 "{user_request}"
 
@@ -54,47 +54,67 @@ Think about the BEST architecture. Consider:
 - What technologies to use?
 - How components interact?
 
-Return a JSON object with:
-{{
-    "project_name": "name",
-    "description": "brief description",
-    "tech_stack": ["technology1", "technology2"],
-    "files": [
-        {{
-            "path": "relative/path/to/file",
-            "description": "what this file does",
-            "type": "frontend/backend/config/docs"
-        }},
-        ...
-    ]
-}}
+IMPORTANT: For full-stack applications, ALWAYS include:
+- Frontend files (HTML, CSS, JS)
+- Backend files (Python/Node)
+- Config files (requirements.txt, package.json)
+- README.md
 
-Include ALL necessary files - frontend, backend, configs, README, etc.
-Be specific about file paths and purposes.
+Return ONLY valid JSON (no markdown, no explanations):
+{{"project_name": "name", "description": "brief", "tech_stack": ["tech1", "tech2"], "files": [{{"path": "path/to/file", "description": "what it does", "type": "frontend/backend/config/docs"}}]}}
 
-Return ONLY the JSON, no other text."""
-        
-        response = self.orchestrator.generate(prompt, max_tokens=2000, temperature=0.3)
-        
-        # Parse JSON
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except:
-                pass
-        
-        # Fallback plan
-        return {
-            "project_name": "project",
-            "description": user_request,
-            "tech_stack": ["python"],
-            "files": [
-                {"path": "main.py", "description": "Main file", "type": "backend"},
-                {"path": "README.md", "description": "Documentation", "type": "docs"}
-            ]
-        }
+Be specific. Include 5-10 files for a full-stack app."""
     
+    response = self.orchestrator.generate(prompt, max_tokens=2000, temperature=0.3)
+    
+    # Debug print
+    print(f"  [debug] Raw response length: {len(response)}")
+    print(f"  [debug] First 200 chars: {response[:200]}")
+    
+    # Better JSON extraction - try multiple methods
+    import json
+    import re
+    
+    # Method 1: Direct JSON parse
+    try:
+        return json.loads(response)
+    except:
+        pass
+    
+    # Method 2: Find JSON between { }
+    json_match = re.search(r'\{.*\}', response, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except:
+            pass
+    
+    # Method 3: Find JSON array
+    json_match = re.search(r'\[.*\]', response, re.DOTALL)
+    if json_match:
+        try:
+            files = json.loads(json_match.group())
+            return {"project_name": "project", "files": files}
+        except:
+            pass
+    
+    print("  [warn] JSON parsing failed, using enhanced fallback")
+    
+    # Enhanced fallback for full-stack
+    return {
+        "project_name": "fullstack-app",
+        "description": user_request,
+        "tech_stack": ["python", "html", "css", "javascript"],
+        "files": [
+            {"path": "backend/main.py", "description": "Backend API server", "type": "backend"},
+            {"path": "backend/requirements.txt", "description": "Python dependencies", "type": "config"},
+            {"path": "frontend/index.html", "description": "Frontend HTML", "type": "frontend"},
+            {"path": "frontend/style.css", "description": "Frontend styles", "type": "frontend"},
+            {"path": "frontend/app.js", "description": "Frontend JavaScript", "type": "frontend"},
+            {"path": "README.md", "description": "Project documentation", "type": "docs"}
+        ]
+    }
+
     def display_plan(self, plan: dict):
         """Show the project plan"""
         print(f"\n  Project: {plan['project_name']}")
@@ -108,42 +128,78 @@ Return ONLY the JSON, no other text."""
             print(f"    {indent}    └── {file['description']}")
     
     def generate_files(self, plan: dict) -> list:
-        """Generate each file using GPT-OSS-20B"""
-        generated_files = []
+    """Generate each file using GPT-OSS-20B"""
+    generated_files = []
+    
+    for i, file_spec in enumerate(plan['files'], 1):
+        print(f"\n  [{i}/{len(plan['files'])}] Generating {file_spec['path']}...")
         
-        for i, file_spec in enumerate(plan['files'], 1):
-            print(f"\n  [{i}/{len(plan['files'])}] Generating {file_spec['path']}...")
-            
-            prompt = f"""Generate the complete file for:
+        prompt = f"""Generate the complete code for this file:
 
 Project: {plan['project_name']}
-Description: {plan['description']}
-Tech stack: {', '.join(plan.get('tech_stack', []))}
-File path: {file_spec['path']}
-File type: {file_spec['type']}
-File purpose: {file_spec['description']}
+File: {file_spec['path']}
+Type: {file_spec['type']}
+Purpose: {file_spec['description']}
 
-Other files in project:
-{self._format_other_files(plan['files'], file_spec)}
-
-Generate COMPLETE, PRODUCTION-READY code.
-Include all necessary imports, proper error handling, and comments.
-
-Output ONLY the file content, no explanations."""
-            
-            content = self.generator.generate(prompt, max_tokens=4000, temperature=0.2)
-            
-            generated_files.append({
-                'path': file_spec['path'],
-                'description': file_spec['description'],
-                'type': file_spec['type'],
-                'content': content
-            })
-            
-            print(f"  ✓ Generated {len(content)} chars")
+Output the COMPLETE file content. If this is code, include all imports and full implementation.
+If this is documentation, write comprehensive docs.
+Do NOT skip this file. Provide actual content."""
         
-        return generated_files
+        content = self.generator.generate(prompt, max_tokens=4000, temperature=0.2)
+        
+        # Check if empty
+        if not content or len(content.strip()) == 0:
+            print(f"  ⚠️ Empty response, retrying...")
+            # Retry once
+            content = self.generator.generate(prompt, max_tokens=4000, temperature=0.3)
+        
+        # If still empty, create placeholder
+        if not content or len(content.strip()) == 0:
+            print(f"  ⚠️ Still empty, creating placeholder")
+            content = self._create_placeholder(file_spec)
+        
+        generated_files.append({
+            'path': file_spec['path'],
+            'description': file_spec['description'],
+            'type': file_spec['type'],
+            'content': content
+        })
+        
+        print(f"  ✓ Generated {len(content)} chars")
     
+    return generated_files
+
+def _create_placeholder(self, file_spec: dict) -> str:
+    """Create placeholder content based on file type"""
+    path = file_spec['path']
+    
+    if path.endswith('.py'):
+        return f"""# {file_spec['description']}
+
+def main():
+    print("Hello from {path}")
+
+if __name__ == "__main__":
+    main()
+"""
+    elif path.endswith('.html'):
+        return """<!DOCTYPE html>
+<html>
+<head>
+    <title>Project</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Hello World</h1>
+    <script src="app.js"></script>
+</body>
+</html>
+"""
+    elif path.endswith('.md'):
+        return f"# {file_spec['description']}\n\nProject documentation placeholder.\n"
+    else:
+        return f"# {file_spec['description']}\n"
+
     def _format_other_files(self, all_files: list, current_file: dict) -> str:
         """Format other files for context"""
         others = [f for f in all_files if f['path'] != current_file['path']]
