@@ -6,7 +6,7 @@ set -e
 echo "🚀 Installing Qwen Code Agent..."
 
 # 1. Clone repo
-git clone https://github.com/yourusername/qwen-code-agent.git ~/.qwen-code-agent
+git clone https://github.com/ParthParikh-240906/qwen-code-agent.git ~/.qwen-code-agent
 cd ~/.qwen-code-agent
 
 # 2. Install dependencies
