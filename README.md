@@ -1,33 +1,55 @@
 # qwen-code-agent
 
-**V4.4**
+**V5.2**
 
-A multi-agent AI coding assistant that orchestrates GPT-OSS models via Groq
-to solve complex tasks. Built on V3's multi-agent architecture, V4 removes
-the Ollama dependency entirely — all commands now run through Groq's free
-tier with GPT-OSS-20B for fast generation and GPT-OSS-120B for intelligent
-orchestration.
+An autonomous AI project builder that orchestrates GPT-OSS models via Groq
+to create complete full-stack applications. V5 transforms the agent from a
+Q&A tool into a software engineer — it plans architectures, generates
+multiple files with real-time streaming, writes them to disk, and can
+modify existing projects.
 
-One-line install. Zero cost. Web-grounded. Multi-model. No local setup
-required.
+One-line install. Zero cost. Real-time code generation. Autonomous project
+building. No local setup required.
+
+## What's new in V5
+
+- **Autonomous project builder** — `qbuild` creates complete projects with
+  frontend, backend, configs, and docs
+- **Real-time code streaming** — watch code being written file-by-file
+  like Cline/Devin
+- **Project modification** — `qmodify` analyzes existing projects and
+  makes targeted changes
+- **Intelligent architecture** — GPT-OSS-120B plans the best structure for
+  each project
+- **Multi-file generation** — creates 5-10+ files per project automatically
 
 ## Architecture
 
 ```
-User Request
+User Request: "Build a PDF analysis tool"
     ↓
-[GPT-OSS-120B Orchestrator]
+[GPT-OSS-120B Architect]
+    Plans project structure:
+    ├── backend/main.py
+    ├── backend/requirements.txt
+    ├── frontend/index.html
+    ├── frontend/style.css
+    ├── frontend/app.js
+    └── README.md
     ↓
-Breaks into: Search + Research + Generate
+[GPT-OSS-20B Generator - streams each file]
+    ├── [1/6] Generating backend/main.py... (real-time)
+    ├── [2/6] Generating backend/requirements.txt...
+    ├── [3/6] Generating frontend/index.html...
+    └── ...
     ↓
-┌─────────────┬──────────────┬─────────────┐
-│  Web Search │  Web Research│  GPT-OSS-20B│
-│  (DuckDuckGo)│ (DuckDuckGo) │  (Generate) │
-└─────────────┴──────────────┴─────────────┘
-    ↓              ↓              ↓
-[GPT-OSS-20B Combiner - uses all context]
+[File Writer]
+    Creates files in current directory
     ↓
-Final Response with Code + Sources
+[GPT-OSS-120B Reviewer]
+    Validates project completeness
+    ↓
+✅ PROJECT COMPLETE!
 ```
 
 ## Quick install
@@ -47,7 +69,8 @@ qwen-code-agent/
 ├── config.py              # model settings, API keys, search config
 ├── agent.py                # CLI entrypoint
 ├── web_tools.py             # web search + content fetching
-├── groq_client.py           # GPT-OSS integration via Groq
+├── groq_client.py           # GPT-OSS integration with streaming
+├── project_builder.py       # V5: autonomous project builder
 ├── install.sh               # one-line installer
 ├── .env                    # API keys (NOT committed to git)
 ├── .gitignore
@@ -95,10 +118,11 @@ curl -sSL https://raw.githubusercontent.com/ParthParikh-240906/qwen-code-agent/m
    ```bash
    alias qsummarize="python3 ~/.qwen-code-agent/agent.py summarize"
    alias qexplain="python3 ~/.qwen-code-agent/agent.py explain"
-   alias qgenerate="python3 ~/.qwen-code-agent/agent.py qgenerate-fast"
+   alias qgenerate="python3 ~/.qwen-code-agent/agent.py generate"
    alias qsearch="python3 ~/.qwen-code-agent/agent.py qsearch"
    alias qresearch="python3 ~/.qwen-code-agent/agent.py qresearch"
    alias qbuild="python3 ~/.qwen-code-agent/agent.py qbuild"
+   alias qmodify="python3 ~/.qwen-code-agent/agent.py qmodify"
    ```
 
 ## Usage
@@ -126,43 +150,103 @@ qsearch "what is langchain"
 qresearch "compare FastAPI vs Flask"
 ```
 
-### Multi-agent orchestration (GPT-OSS-120B + 20B)
+### Autonomous project building (GPT-OSS-120B + 20B)
 
 ```bash
-# Complex task - breaks into subtasks, executes, combines
-qbuild "Create a REST API with user authentication"
+# Build complete project with real-time code streaming
+qbuild "Create a full-stack PDF analysis tool with RAG"
+
+# This will:
+# 1. Plan architecture (GPT-OSS-120B)
+# 2. Generate each file with real-time display (GPT-OSS-20B)
+# 3. Write files to current directory
+# 4. Review the complete project
+```
+
+### Project modification
+
+```bash
+# Modify existing project
+cd my-project
+qmodify "Add vector database support to the RAG pipeline"
+
+# This will:
+# 1. Scan current project files
+# 2. Plan modifications (GPT-OSS-120B)
+# 3. Execute changes with real-time streaming
+```
+
+## Example: building a full-stack app
+
+```bash
+mkdir my-app && cd my-app
+qbuild "Create a real estate website with property listings"
+
+# Output:
+# 🤖 AUTONOMOUS PROJECT BUILDER
+# Request: Create a real estate website...
+#
+# [1/4] 🧠 Architect planning...
+#   Project: real-estate-website
+#   Tech stack: React, FastAPI, SQLite
+#   Files to create: 8
+#
+# [2/4] 📝 Generating files...
+#   [1/8] Generating backend/main.py...
+#   📄 backend/main.py
+#   ──────────────────────────────────
+#   from fastapi import FastAPI...
+#   (streaming in real-time)
+#   ✓ Generated 2341 chars
+#   ...
+#
+# [3/4] 💾 Writing files...
+#   ✓ Created backend/main.py
+#   ✓ Created frontend/index.html
+#   ...
+#
+# [4/4] ✅ Final review...
+#   Review: Project is complete...
+#
+# 🎉 PROJECT COMPLETE!
+# Location: /Users/username/my-app
+```
 
 ## How it works
-### Multi-agent orchestration (`qbuild`)
 
-1. **Orchestration** — GPT-OSS-120B breaks the request into 3 subtasks:
-   - Search: find current best practices
-   - Research: deep dive into technical details
-   - Generate: create code informed by search/research
+### Autonomous project builder (`qbuild`)
 
-2. **Execution** — Each subtask runs with the appropriate tool.
+1. **Architecture planning** — GPT-OSS-120B analyzes the request and plans
+   the best project structure
+2. **Real-time generation** — GPT-OSS-20B generates each file with
+   streaming display
+3. **File writing** — creates directories and writes files to current
+   location
+4. **Validation** — GPT-OSS-120B reviews the complete project
 
-3. **Combination** — GPT-OSS-20B synthesizes everything into a coherent
-   response.
+### Project modification (`qmodify`)
+
+1. **Project scan** — analyzes existing files in current directory
+2. **Change planning** — GPT-OSS-120B determines what files need to change
+3. **Execution** — generates new content with streaming and writes changes
 
 ### Model routing
 
 | Task | Model | Why |
 |---|---|---|
-| Orchestration | GPT-OSS-120B | Smart task decomposition |
-| Code generation | GPT-OSS-20B | Fast, high-quality output |
-| Result combination | GPT-OSS-20B | Quick synthesis |
-| Web search | DuckDuckGo | Free, no API key needed |
+| Architecture planning | GPT-OSS-120B | Complex reasoning |
+| Code generation | GPT-OSS-20B | Fast, streaming |
+| Project modification planning | GPT-OSS-120B | Context understanding |
+| Web search | DuckDuckGo | Free, no API key |
+| File operations | Python | Direct file system access |
 
 ### Token economics
 
-A typical `qbuild` uses ~6K tokens:
-- Orchestration: ~1K tokens
-- Generation: ~3K tokens
-- Combination: ~2K tokens
-
-With Groq's free tier (200K tokens/day), you can run **~33 `qbuild`
-operations per day** at zero cost.
+A typical `qbuild` (8 files):
+- Architecture planning: ~2K tokens
+- File generation: ~25K tokens (8 files × ~3K each)
+- Review: ~1K tokens
+- **Total: ~28K tokens** — well within daily free limit
 
 ## Config
 
@@ -184,53 +268,52 @@ In `.env`:
 - **New command**: add a `cmd_yourcommand` function in `agent.py`, register
   in argparse.
 - **New model**: change `GROQ_MODEL` in `.env` to any Groq-supported model.
-- **Better orchestration**: customize the task breakdown prompt in
-  `groq_client.py`.
-- **Parallel execution**: use `asyncio` to run subtasks concurrently.
-- **More subtask types**: add "test", "refactor", "document" to the
-  orchestrator.
+- **Custom architectures**: modify the planning prompt in
+  `project_builder.py`.
+- **More file types**: extend `_create_placeholder` for new file
+  extensions.
+- **Git integration**: auto-initialize git after project creation.
 
 ## Known limitations
 
 - **Rate limits** — Groq free tier: 8K tokens/min, 200K tokens/day.
+- **Large projects** — projects with 20+ files may exceed context window.
 - **Search quality** — DuckDuckGo results can be noisy.
 - **Page fetching** — Some sites block scrapers (403 errors).
-- **Orchestration variability** — 120B might occasionally create duplicate
-  tasks.
+- **JSON parsing** — orchestrator might occasionally return malformed JSON.
 
 ## Changelog
+
+**V5.2**
+- Autonomous project builder (`qbuild`)
+- Real-time code streaming display
+- Project modification (`qmodify`)
+- Intelligent architecture planning
+- Multi-file generation (5-10+ files)
+- File writing to disk
+- Project review and validation
 
 **V4.4**
 - Removed Ollama dependency — all commands use GPT-OSS-20B
 - One-line installer with auto `.env` copying
-- All file operations (`summarize`, `explain`) now use GPT-OSS-20B
 - Simplified setup — no local model required
 - Faster generation (1-2 seconds per request)
 
 **V3.0**
 - Add GPT-OSS-120B orchestration via Groq
 - Add GPT-OSS-20B for fast generation
-- Add `qbuild` multi-agent command
-- Add `qgenerate-fast` for quick GPT-OSS generation
-- Context-aware generation (search/research inform code)
-- Multi-model routing (120B for planning, 20B for execution)
-- Terminal-friendly output (no tables)
-- `.env` support for API keys
+- Multi-agent orchestration with web search
+- Terminal-friendly output
 
 **V2.0**
-- Add web search (`qsearch`) and deep research (`qresearch`) commands
-- Add `web_tools.py` with DuckDuckGo search + page fetching via BeautifulSoup
-- Add grounded Q&A prompt template that forces answer-from-context behavior
-- Display clickable source URLs below answers
-- Trusted domain filtering for higher-quality results
-- Graceful fallback to search snippets when full page content isn't available
+- Web search (`qsearch`) and deep research (`qresearch`)
+- DuckDuckGo integration + BeautifulSoup page fetching
+- Grounded Q&A with source citation
 
 **V1.1**
-- Print real line/char count when a file is read (e.g. `[read main.py: 87 lines, 2103 chars]`)
-- Add animated `====>` progress bar while waiting on the model's first token; clears automatically once streaming output begins
-- Note: the bar is cosmetic ("still working" signal), not true progress — Ollama's API doesn't expose prefill/prompt-processing progress
+- Real line/char count display
+- Animated progress bar
 
-**V1**
-- Initial release: `summarize`, `explain`, `review`, `generate` commands
-- Templated prompts in `prompts/` for consistent, non-rambly 7B output
-- Config-driven model/host/temperature settings
+**V1.0**
+- Initial release: `summarize`, `explain`, `generate`
+- Templated prompts for consistent output

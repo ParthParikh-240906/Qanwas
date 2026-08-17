@@ -114,3 +114,30 @@ Include:
 4. Any important caveats or alternatives"""
         
         return self.generate(prompt, max_tokens=4000, temperature=0.3)
+    
+    def generate_stream(self, prompt: str, max_tokens: int = 4000, temperature: float = 0.3) -> str:
+        """Generate response with streaming display"""
+        full_text = []
+        
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stream=True
+            )
+            
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    print(token, end="", flush=True)
+                    full_text.append(token)
+            
+            print()  # New line after streaming
+            return "".join(full_text)
+            
+        except Exception as e:
+            print(f"[Groq streaming error: {e}]")
+            # Fallback to non-streaming
+            return self.generate(prompt, max_tokens, temperature)

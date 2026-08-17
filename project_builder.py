@@ -128,11 +128,12 @@ Be specific. Include 5-10 files for a full-stack app."""
             print(f"    {indent}    └── {file['description']}")
     
     def generate_files(self, plan: dict) -> list:
-        """Generate each file using GPT-OSS-20B"""
+        """Generate each file using GPT-OSS-20B with real-time display"""
         generated_files = []
         
         for i, file_spec in enumerate(plan['files'], 1):
             print(f"\n  [{i}/{len(plan['files'])}] Generating {file_spec['path']}...")
+            print(f"  {'─'*50}")
             
             prompt = f"""Generate the complete code for this file:
 
@@ -145,15 +146,17 @@ Output the COMPLETE file content. If this is code, include all imports and full 
 If this is documentation, write comprehensive docs.
 Do NOT skip this file. Provide actual content."""
             
-            content = self.generator.generate(prompt, max_tokens=4000, temperature=0.2)
+            # Stream generation - show content as it comes
+            print(f"  📄 {file_spec['path']}")
+            print(f"  {'─'*50}")
+            
+            content = self.generator.generate_stream(prompt, max_tokens=4000, temperature=0.2)
             
             # Check if empty
             if not content or len(content.strip()) == 0:
                 print(f"  ⚠️ Empty response, retrying...")
-                # Retry once
                 content = self.generator.generate(prompt, max_tokens=4000, temperature=0.3)
             
-            # If still empty, create placeholder
             if not content or len(content.strip()) == 0:
                 print(f"  ⚠️ Still empty, creating placeholder")
                 content = self._create_placeholder(file_spec)
@@ -165,7 +168,7 @@ Do NOT skip this file. Provide actual content."""
                 'content': content
             })
             
-            print(f"  ✓ Generated {len(content)} chars")
+            print(f"\n  ✓ Generated {len(content)} chars")
         
         return generated_files
 
@@ -241,3 +244,136 @@ Provide brief feedback."""
         
         review = self.orchestrator.generate(prompt, max_tokens=1000, temperature=0.3)
         print(f"\n  Review: {review[:500]}...")
+
+    def modify_project(self, modification_request: str):
+        """Modify existing project based on user request"""
+        print(f"\n{'='*60}")
+        print(f"🔧 PROJECT MODIFICATION")
+        print(f"Request: {modification_request}")
+        print(f"{'='*60}\n")
+        
+        # Step 1: Analyze current project
+        print("[1/3] 📊 Analyzing current project...")
+        current_files = self._scan_project()
+        
+        if not current_files:
+            print("  [error] No files found in current directory")
+            return
+        
+        print(f"  Found {len(current_files)} files")
+        for f in current_files[:10]:
+            print(f"    - {f}")
+        
+        # Step 2: Plan modification
+        print(f"\n[2/3] 🧠 Planning modifications...")
+        plan = self._plan_modification(modification_request, current_files)
+        
+        print(f"\n  Changes to make:")
+        for change in plan['changes']:
+            print(f"    - {change['action']}: {change['file']}")
+        
+        # Step 3: Execute modifications
+        print(f"\n[3/3] ⚡ Executing modifications...")
+        self._execute_modifications(plan, current_files)
+        
+        print(f"\n{'='*60}")
+        print(f"✅ MODIFICATION COMPLETE!")
+        print(f"{'='*60}\n")
+    
+    def _scan_project(self) -> list:
+        """Scan current directory for existing files"""
+        files = []
+        for root, dirs, filenames in os.walk('.'):
+            # Skip hidden directories
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            for filename in filenames:
+                filepath = os.path.join(root, filename)
+                files.append(filepath)
+        return files
+    
+    def _plan_modification(self, request: str, current_files: list) -> dict:
+        """Use GPT-OSS-120B to plan modifications"""
+        files_summary = "\n".join(current_files[:20])
+        
+        prompt = f"""You are modifying an existing project.
+
+Current files:
+{files_summary}
+
+Modification request: {request}
+
+Plan the changes needed. Return JSON:
+{{
+    "changes": [
+        {{
+            "action": "modify/create/delete",
+            "file": "path/to/file",
+            "description": "what to change",
+            "new_content": "complete new content if create/modify"
+        }}
+    ]
+}}
+
+Only include files that need changes. Be specific."""
+        
+        response = self.orchestrator.generate(prompt, max_tokens=3000, temperature=0.3)
+        
+        # Parse JSON
+        import json
+        import re
+        
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except:
+                pass
+        
+        return {"changes": []}
+    
+    def _execute_modifications(self, plan: dict, current_files: list):
+        """Execute the planned modifications"""
+        for i, change in enumerate(plan['changes'], 1):
+            print(f"\n  [{i}/{len(plan['changes'])}] {change['action']}: {change['file']}")
+            
+            if change['action'] == 'create':
+                # Generate new file
+                prompt = f"""Create this new file for the project:
+
+File: {change['file']}
+Purpose: {change['description']}
+
+Generate complete file content."""
+                
+                content = self.generator.generate_stream(prompt, max_tokens=3000)
+                
+                # Write file
+                filepath = self.output_dir / change['file']
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                with open(filepath, 'w') as f:
+                    f.write(content)
+                print(f"  ✓ Created {filepath}")
+            
+            elif change['action'] == 'modify':
+                # Read existing file
+                filepath = self.output_dir / change['file']
+                if filepath.exists():
+                    current_content = filepath.read_text()
+                    
+                    prompt = f"""Modify this existing file:
+
+File: {change['file']}
+Current content:
+{current_content}
+
+Change needed: {change['description']}
+
+Output the COMPLETE new file content."""
+                    
+                    new_content = self.generator.generate_stream(prompt, max_tokens=4000)
+                    
+                    with open(filepath, 'w') as f:
+                        f.write(new_content)
+                    print(f"  ✓ Modified {filepath}")
+                else:
+                    print(f"  ⚠️ File not found: {change['file']}")

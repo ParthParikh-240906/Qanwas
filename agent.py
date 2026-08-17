@@ -348,6 +348,19 @@ def cmd_build(args):
     builder = ProjectBuilder(output_dir=".")
     builder.build_project(user_request)
 
+def cmd_modify(args):
+    """Modify existing project"""
+    from project_builder import ProjectBuilder
+    
+    request = " ".join(args.request)
+    
+    if not request.strip():
+        print("[error] Modification request cannot be empty.")
+        return
+    
+    builder = ProjectBuilder(output_dir=".")
+    builder.modify_project(request)
+
 # --------------------------------------------------------------------------
 # CLI wiring
 # --------------------------------------------------------------------------
@@ -381,6 +394,10 @@ def main():
     p_build = sub.add_parser("qbuild", help="Multi-agent orchestration for complex tasks")
     p_build.add_argument("prompt", nargs="+")
     p_build.set_defaults(func=cmd_build)
+
+    p_modify = sub.add_parser("qmodify", help="Modify existing project")
+    p_modify.add_argument("request", nargs="+")
+    p_modify.set_defaults(func=cmd_modify)
 
     args = parser.parse_args()
     args.func(args)
