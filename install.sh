@@ -5,38 +5,40 @@ set -e
 
 echo "🚀 Installing Qwen Code Agent..."
 
-# Remove existing installation and aliases
+# Remove existing installation
 if [ -d ~/.qwen-code-agent ]; then
-    echo "📦 Removing existing installation..."
     rm -rf ~/.qwen-code-agent
 fi
 
-# Remove old aliases
-sed -i '' '/alias qsummarize/d' ~/.zshrc 2>/dev/null || true
-sed -i '' '/alias qexplain/d' ~/.zshrc 2>/dev/null || true
-sed -i '' '/alias qgenerate/d' ~/.zshrc 2>/dev/null || true
-sed -i '' '/alias qsearch/d' ~/.zshrc 2>/dev/null || true
-sed -i '' '/alias qresearch/d' ~/.zshrc 2>/dev/null || true
-sed -i '' '/alias qbuild/d' ~/.zshrc 2>/dev/null || true
-
 # Clone repo
-echo "📥 Cloning repository..."
 git clone https://github.com/ParthParikh-240906/qwen-code-agent.git ~/.qwen-code-agent
 cd ~/.qwen-code-agent
 
 # Install dependencies
-echo "📦 Installing dependencies..."
 pip3 install -r requirements.txt
 
-# Setup .env
-echo ""
-echo "🔑 Enter your Groq API key (from https://console.groq.com):"
-read -p "API Key: " GROQ_KEY
-echo "GROQ_API_KEY=$GROQ_KEY" > .env
-echo "GROQ_MODEL=openai/gpt-oss-20b" >> .env
-echo "GROQ_ORCHESTRATOR_MODEL=openai/gpt-oss-120b" >> .env
-echo "USE_GROQ_FOR_GENERATE=true" >> .env
-echo "✓ API key saved"
+# Check if GROQ_API_KEY is provided as environment variable
+if [ -z "$GROQ_API_KEY" ]; then
+    # Try to copy from existing project if it exists
+    if [ -f ~/projects/qwen-code-agent/.env ]; then
+        cp ~/projects/qwen-code-agent/.env .env
+        echo "✓ Copied .env from existing project"
+    else
+        # Create template
+        echo "GROQ_API_KEY=YOUR_KEY_HERE" > .env
+        echo "GROQ_MODEL=openai/gpt-oss-20b" >> .env
+        echo "GROQ_ORCHESTRATOR_MODEL=openai/gpt-oss-120b" >> .env
+        echo "USE_GROQ_FOR_GENERATE=true" >> .env
+        echo "⚠️  Add your Groq API key to ~/.qwen-code-agent/.env"
+    fi
+else
+    # Use environment variable
+    echo "GROQ_API_KEY=$GROQ_API_KEY" > .env
+    echo "GROQ_MODEL=openai/gpt-oss-20b" >> .env
+    echo "GROQ_ORCHESTRATOR_MODEL=openai/gpt-oss-120b" >> .env
+    echo "USE_GROQ_FOR_GENERATE=true" >> .env
+    echo "✓ API key set from environment"
+fi
 
 # Add aliases
 echo "🔧 Setting up aliases..."
@@ -56,5 +58,3 @@ echo ""
 echo "Run this to activate:"
 echo "  source ~/.zshrc"
 echo ""
-echo "Then try:"
-echo "  qbuild 'create a hello world app'"
