@@ -128,14 +128,12 @@ Be specific. Include 5-10 files for a full-stack app."""
         print()
     
     def generate_files(self, plan: dict) -> list:
-        """Generate files with Cline-style tree view display"""
+        """Generate files silently and write directly to disk"""
         generated_files = []
         
         for i, file_spec in enumerate(plan['files'], 1):
-            # File header like Cline
-            print(f"\n  ┌─ 📄 {file_spec['path']}")
-            print(f"  │  {file_spec['description']}")
-            print(f"  └─{'─'*50}")
+            # Show progress (not the code)
+            print(f"\n  [{i}/{len(plan['files'])}] 📄 {file_spec['path']}")
             
             prompt = f"""Generate the complete code for this file:
 
@@ -146,19 +144,21 @@ Purpose: {file_spec['description']}
 
 Output the COMPLETE file content. No explanations, just the code."""
             
-            # Stream with indentation for file display
-            content = self.generator.generate_stream_indented(
-                prompt, 
-                max_tokens=4000, 
-                temperature=0.2,
-                indent="  │  "
-            )
+            # Generate WITHOUT printing (silent)
+            content = self.generator.generate(prompt, max_tokens=4000, temperature=0.2)
             
-            print(f"  └─ ✓ Generated {len(content)} chars")
-            
+            # Check if empty
             if not content or len(content.strip()) == 0:
-                print(f"  ⚠️ Empty response, retrying...")
+                print(f"  ⚠️ Empty, retrying...")
                 content = self.generator.generate(prompt, max_tokens=4000, temperature=0.3)
+            
+            # Write file immediately
+            filepath = self.output_dir / file_spec['path']
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            with open(filepath, 'w') as f:
+                f.write(content)
+            
+            print(f"  ✓ Created {file_spec['path']} ({len(content)} chars)")
             
             generated_files.append({
                 'path': file_spec['path'],
@@ -166,9 +166,13 @@ Output the COMPLETE file content. No explanations, just the code."""
                 'type': file_spec['type'],
                 'content': content
             })
+            
+            # Small delay to avoid rate limits
+            import time
+            time.sleep(1)
         
         return generated_files
-    
+
     def write_files(self, generated_files: list):
         """Write generated files to disk"""
         print(f"\n  💾 Writing files:")

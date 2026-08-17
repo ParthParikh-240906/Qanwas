@@ -1,6 +1,6 @@
 # qwen-code-agent
 
-**V5.2**
+**V5.3**
 
 An autonomous AI project builder that orchestrates GPT-OSS models via Groq
 to create complete full-stack applications. V5 transforms the agent from a
@@ -284,7 +284,7 @@ In `.env`:
 
 ## Changelog
 
-**V5.2**
+**V5**
 - Autonomous project builder (`qbuild`)
 - Real-time code streaming display
 - Project modification (`qmodify`)
@@ -293,19 +293,19 @@ In `.env`:
 - File writing to disk
 - Project review and validation
 
-**V4.4**
+**V4**
 - Removed Ollama dependency — all commands use GPT-OSS-20B
 - One-line installer with auto `.env` copying
 - Simplified setup — no local model required
 - Faster generation (1-2 seconds per request)
 
-**V3.0**
+**V3**
 - Add GPT-OSS-120B orchestration via Groq
 - Add GPT-OSS-20B for fast generation
 - Multi-agent orchestration with web search
 - Terminal-friendly output
 
-**V2.0**
+**V2**
 - Web search (`qsearch`) and deep research (`qresearch`)
 - DuckDuckGo integration + BeautifulSoup page fetching
 - Grounded Q&A with source citation

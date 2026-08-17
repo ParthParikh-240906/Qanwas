@@ -13,10 +13,10 @@ class GroqClient:
         self.model = model or config.GROQ_MODEL
     
     def generate(self, prompt: str, max_tokens: int = 4000, temperature: float = 0.3) -> str:
-        """Generate response from Groq model with retry"""
+        """Generate response from Groq model with retry and rate limit handling"""
         import time
         
-        for attempt in range(3):  # Try 3 times
+        for attempt in range(5):  # Try 5 times
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
@@ -28,10 +28,16 @@ class GroqClient:
                 if content and len(content.strip()) > 0:
                     return content
             except Exception as e:
-                print(f"[Groq error (attempt {attempt+1}): {e}]")
-                time.sleep(2)  # Wait before retry
+                if "429" in str(e):
+                    # Rate limited - wait longer
+                    wait_time = min(30, 5 * (attempt + 1))
+                    print(f"  ⏳ Rate limited, waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"  [Groq error (attempt {attempt+1}): {e}]")
+                    time.sleep(2)
         
-        print("[error] Failed to generate after 3 attempts")
+        print("[error] Failed to generate after 5 attempts")
         return ""
     
     def orchestrate(self, user_prompt: str) -> list:
@@ -142,8 +148,8 @@ Include:
             # Fallback to non-streaming
             return self.generate(prompt, max_tokens, temperature)
 
-    def generate_stream_indented(self, prompt: str, max_tokens: int = 4000, temperature: float = 0.3, indent: str = "") -> str:
-        """Stream with indentation for file display"""
+    def generate_stream_silent(self, prompt: str, max_tokens: int = 4000, temperature: float = 0.3) -> str:
+        """Generate response silently (no printing) - returns full text"""
         full_text = []
         
         try:
@@ -158,16 +164,8 @@ Include:
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
-                    # Print with indentation
-                    lines = token.split('\n')
-                    for j, line in enumerate(lines):
-                        if j == 0:
-                            print(f"{indent}{line}", end="", flush=True)
-                        else:
-                            print(f"\n{indent}{line}", end="", flush=True)
                     full_text.append(token)
             
-            print()
             return "".join(full_text)
             
         except Exception as e:
