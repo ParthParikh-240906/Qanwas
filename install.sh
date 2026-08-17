@@ -1,9 +1,9 @@
 #!/bin/bash
-# One-line installer for qwen-code-agent
+# One-line installer for qwen-code-agent V5
 
 set -e
 
-echo "🚀 Installing Qwen Code Agent..."
+echo "🚀 Installing Qwen Code Agent V5..."
 
 # Remove existing installation
 if [ -d ~/.qwen-code-agent ]; then
@@ -40,13 +40,22 @@ else
     echo "✓ API key set from environment"
 fi
 
+# Remove old aliases first
+sed -i '' '/alias qsummarize/d' ~/.zshrc 2>/dev/null || true
+sed -i '' '/alias qexplain/d' ~/.zshrc 2>/dev/null || true
+sed -i '' '/alias qgenerate/d' ~/.zshrc 2>/dev/null || true
+sed -i '' '/alias qsearch/d' ~/.zshrc 2>/dev/null || true
+sed -i '' '/alias qresearch/d' ~/.zshrc 2>/dev/null || true
+sed -i '' '/alias qbuild/d' ~/.zshrc 2>/dev/null || true
+sed -i '' '/# Qwen Code Agent/d' ~/.zshrc 2>/dev/null || true
+
 # Add aliases
 echo "🔧 Setting up aliases..."
 echo "" >> ~/.zshrc
-echo "# Qwen Code Agent" >> ~/.zshrc
+echo "# Qwen Code Agent V5" >> ~/.zshrc
 echo 'alias qsummarize="python3 ~/.qwen-code-agent/agent.py summarize"' >> ~/.zshrc
 echo 'alias qexplain="python3 ~/.qwen-code-agent/agent.py explain"' >> ~/.zshrc
-echo 'alias qgenerate="python3 ~/.qwen-code-agent/agent.py qgenerate-fast"' >> ~/.zshrc
+echo 'alias qgenerate="python3 ~/.qwen-code-agent/agent.py generate"' >> ~/.zshrc
 echo 'alias qsearch="python3 ~/.qwen-code-agent/agent.py qsearch"' >> ~/.zshrc
 echo 'alias qresearch="python3 ~/.qwen-code-agent/agent.py qresearch"' >> ~/.zshrc
 echo 'alias qbuild="python3 ~/.qwen-code-agent/agent.py qbuild"' >> ~/.zshrc
@@ -56,4 +65,12 @@ echo "✅ Installation complete!"
 echo ""
 echo "Run this to activate:"
 echo "  source ~/.zshrc"
+echo ""
+echo "Available commands:"
+echo "  qsummarize <file>     - Summarize code file"
+echo "  qexplain <file>       - Explain code file"
+echo "  qgenerate <prompt>    - Generate code"
+echo "  qsearch <question>    - Web search"
+echo "  qresearch <topic>     - Deep research"
+echo "  qbuild <request>      - Build complete project"
 echo ""

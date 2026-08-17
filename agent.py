@@ -336,64 +336,17 @@ You may reference sources inline as [1], [2], etc.
     return answer
 
 def cmd_build(args):
-    """Multi-agent orchestration: break down, execute, combine"""
-    user_prompt = " ".join(args.prompt)
+    """V5: Autonomous project builder"""
+    from project_builder import ProjectBuilder
     
-    if not user_prompt.strip():
-        print("[error] Prompt cannot be empty.")
+    user_request = " ".join(args.prompt)
+    
+    if not user_request.strip():
+        print("[error] Request cannot be empty.")
         return
     
-    print(f"\n{'='*50}")
-    print(f"QBUILD ORCHESTRATION")
-    print(f"Request: {user_prompt}")
-    print(f"{'='*50}\n")
-    
-    try:
-        orchestrator = GroqClient(model="openai/gpt-oss-120b")
-        combiner = GroqClient(model="openai/gpt-oss-20b")
-    except ValueError as e:
-        print(f"[error] {e}")
-        return
-    
-    # Step 1: Break down
-    print("[1/3] Breaking down request into subtasks...")
-    subtasks = orchestrator.orchestrate(user_prompt)
-    
-    for i, task in enumerate(subtasks, 1):
-        print(f"  Task {i}: [{task['type']}] {task['query'][:60]}...")
-    
-    # Step 2: Execute
-    print(f"\n[2/3] Executing {len(subtasks)} subtasks...")
-    results = []
-    for i, task in enumerate(subtasks, 1):
-        print(f"\n  Executing task {i}/{len(subtasks)}: {task['type']}")
-        
-        if task['type'] == 'search':
-            search_results = web_tools.search_and_fetch(task['query'])
-            context = web_tools.build_context_from_results(search_results)
-            results.append({'task': task, 'output': context})
-            print(f"  ✓ Found {len(search_results)} sources")
-        
-        elif task['type'] == 'generate':
-            gen_prompt = f"Generate code for: {task['query']}\n\nOutput ONLY code, no explanations."
-            output = combiner.generate(gen_prompt, max_tokens=3000)
-            results.append({'task': task, 'output': output})
-            print(f"  ✓ Generated {len(output)} chars")
-        
-        elif task['type'] == 'research':
-            research_results = web_tools.search_and_fetch(task['query'])
-            context = web_tools.build_context_from_results(research_results)
-            results.append({'task': task, 'output': context})
-            print(f"  ✓ Researched {len(research_results)} sources")
-    
-    # Step 3: Combine
-    print(f"\n[3/3] Combining results...")
-    final_answer = combiner.combine_results(user_prompt, results)
-    
-    print(f"\n{'='*50}")
-    print(f"FINAL RESPONSE")
-    print(f"{'='*50}\n")
-    print(final_answer)
+    builder = ProjectBuilder(output_dir=".")
+    builder.build_project(user_request)
 
 # --------------------------------------------------------------------------
 # CLI wiring
@@ -413,7 +366,7 @@ def main():
     p_exp.add_argument("file")
     p_exp.set_defaults(func=cmd_explain)
 
-    p_gen = sub.add_parser("generate", help="Generate code from a description")
+    p_gen = sub.add_parser("generate", help="Generate code")
     p_gen.add_argument("description", nargs="+")
     p_gen.set_defaults(func=cmd_generate)
 
