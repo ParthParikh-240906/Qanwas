@@ -166,17 +166,65 @@ def build_prompt(template_name: str, **kwargs) -> str:
 # --------------------------------------------------------------------------
 
 def cmd_summarize(args):
+    """Summarize file using GPT-OSS-20B"""
     code = read_file_safely(args.file)
-    prompt = build_prompt("summarize", filename=args.file, code=code)
-    print(f"--- summarizing {args.file} ---\n")
-    call_ollama(prompt)
+    
+    try:
+        groq = GroqClient(model="openai/gpt-oss-20b")
+    except ValueError as e:
+        print(f"[error] {e}")
+        return
+    
+    prompt = f"""Summarize the following code file:
 
+File: {args.file}
+
+CODE START:
+{code}
+CODE END
+
+Provide a concise summary:
+1. What the code does (2-3 sentences)
+2. Key functions/classes
+3. Dependencies
+4. Any notable patterns
+
+Be terse and factual."""
+    
+    print(f"--- summarizing {args.file} with GPT-OSS-20B ---\n")
+    response = groq.generate(prompt, max_tokens=2000, temperature=0.2)
+    print(response)
 
 def cmd_explain(args):
+    """Explain file using GPT-OSS-20B"""
     code = read_file_safely(args.file)
-    prompt = build_prompt("explain", filename=args.file, code=code)
-    print(f"--- explaining {args.file} ---\n")
-    call_ollama(prompt)
+    
+    try:
+        groq = GroqClient(model="openai/gpt-oss-20b")
+    except ValueError as e:
+        print(f"[error] {e}")
+        return
+    
+    prompt = f"""Explain the following code file in detail:
+
+File: {args.file}
+
+CODE START:
+{code}
+CODE END
+
+Explain:
+1. Overall purpose
+2. Each function/class in detail
+3. How components interact
+4. Any complex logic or algorithms
+5. Potential improvements
+
+Use bullet points and code references where helpful."""
+    
+    print(f"--- explaining {args.file} with GPT-OSS-20B ---\n")
+    response = groq.generate(prompt, max_tokens=3000, temperature=0.2)
+    print(response)
 
 def cmd_generate(args):
     description = " ".join(args.description)
@@ -287,37 +335,6 @@ You may reference sources inline as [1], [2], etc.
     
     return answer
 
-def cmd_generate_fast(args):
-    """Generate code using GPT-OSS-20B via Groq"""
-    description = " ".join(args.description)
-    
-    if not description.strip():
-        print("[error] Description cannot be empty.")
-        return
-    
-    try:
-        groq = GroqClient(model="openai/gpt-oss-20b")
-    except ValueError as e:
-        print(f"[error] {e}")
-        return
-    
-    prompt = f"""Generate code for the following request:
-
-{description}
-
-Provide complete, production-ready code with:
-- Proper error handling
-- Type hints where applicable
-- Comments explaining complex logic
-- Any necessary imports
-
-Output ONLY the code, no explanations."""
-    
-    print(f"--- generating with GPT-OSS-20B: {description} ---\n")
-    response = groq.generate(prompt, max_tokens=4000, temperature=0.2)
-    print(response)
-
-
 def cmd_build(args):
     """Multi-agent orchestration: break down, execute, combine"""
     user_prompt = " ".join(args.prompt)
@@ -407,10 +424,6 @@ def main():
     p_research = sub.add_parser("qresearch", help="Deep research on a topic")
     p_research.add_argument("question", nargs="+", help="Topic to research")
     p_research.set_defaults(func=cmd_web_research)
-
-    p_gen_fast = sub.add_parser("qgenerate-fast", help="Generate code using GPT-OSS-20B")
-    p_gen_fast.add_argument("description", nargs="+")
-    p_gen_fast.set_defaults(func=cmd_generate_fast)
     
     p_build = sub.add_parser("qbuild", help="Multi-agent orchestration for complex tasks")
     p_build.add_argument("prompt", nargs="+")
