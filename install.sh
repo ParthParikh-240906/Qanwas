@@ -32,27 +32,23 @@ pip3 install -r requirements.txt
 echo ""
 echo "🔑 Enter your Groq API key (from https://console.groq.com):"
 read -p "API Key: " GROQ_KEY
-cat > .env << EOF
-GROQ_API_KEY=$GROQ_KEY
-GROQ_MODEL=openai/gpt-oss-20b
-GROQ_ORCHESTRATOR_MODEL=openai/gpt-oss-120b
-USE_GROQ_FOR_GENERATE=true
-EOF
+echo "GROQ_API_KEY=$GROQ_KEY" > .env
+echo "GROQ_MODEL=openai/gpt-oss-20b" >> .env
+echo "GROQ_ORCHESTRATOR_MODEL=openai/gpt-oss-120b" >> .env
+echo "USE_GROQ_FOR_GENERATE=true" >> .env
 echo "✓ API key saved"
 
 # Add aliases
 echo "🔧 Setting up aliases..."
-cat >> ~/.zshrc << 'EOF'
-
-# Qwen Code Agent
-alias qsummarize="python3 ~/.qwen-code-agent/agent.py summarize"
-alias qexplain="python3 ~/.qwen-code-agent/agent.py explain"
-alias qgenerate="python3 ~/.qwen-code-agent/agent.py qgenerate-fast"
-alias qgenerate-fast="python3 ~/.qwen-code-agent/agent.py qgenerate-fast"
-alias qsearch="python3 ~/.qwen-code-agent/agent.py qsearch"
-alias qresearch="python3 ~/.qwen-code-agent/agent.py qresearch"
-alias qbuild="python3 ~/.qwen-code-agent/agent.py qbuild"
-EOF
+echo "" >> ~/.zshrc
+echo "# Qwen Code Agent" >> ~/.zshrc
+echo 'alias qsummarize="python3 ~/.qwen-code-agent/agent.py summarize"' >> ~/.zshrc
+echo 'alias qexplain="python3 ~/.qwen-code-agent/agent.py explain"' >> ~/.zshrc
+echo 'alias qgenerate="python3 ~/.qwen-code-agent/agent.py qgenerate-fast"' >> ~/.zshrc
+echo 'alias qgenerate-fast="python3 ~/.qwen-code-agent/agent.py qgenerate-fast"' >> ~/.zshrc
+echo 'alias qsearch="python3 ~/.qwen-code-agent/agent.py qsearch"' >> ~/.zshrc
+echo 'alias qresearch="python3 ~/.qwen-code-agent/agent.py qresearch"' >> ~/.zshrc
+echo 'alias qbuild="python3 ~/.qwen-code-agent/agent.py qbuild"' >> ~/.zshrc
 
 echo ""
 echo "✅ Installation complete!"
