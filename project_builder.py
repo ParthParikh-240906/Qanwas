@@ -114,26 +114,28 @@ Be specific. Include 5-10 files for a full-stack app."""
                 {"path": "README.md", "description": "Project documentation", "type": "docs"}
             ]
         }
-
+    
     def display_plan(self, plan: dict):
         """Show the project plan"""
         print(f"\n  Project: {plan['project_name']}")
         print(f"  Description: {plan.get('description', 'N/A')}")
         print(f"  Tech stack: {', '.join(plan.get('tech_stack', []))}")
         print(f"  Files to create: {len(plan['files'])}")
-        print(f"\n  File structure:")
+        print(f"\n  📁 Project structure:")
         for file in plan['files']:
-            indent = "    " + "  " * (file['path'].count('/'))
-            print(f"    {indent}├── {file['path']}")
-            print(f"    {indent}    └── {file['description']}")
+            print(f"    ├── {file['path']}")
+            print(f"    │   └── {file['description']}")
+        print()
     
     def generate_files(self, plan: dict) -> list:
-        """Generate each file using GPT-OSS-20B with real-time display"""
+        """Generate files with Cline-style tree view display"""
         generated_files = []
         
         for i, file_spec in enumerate(plan['files'], 1):
-            print(f"\n  [{i}/{len(plan['files'])}] Generating {file_spec['path']}...")
-            print(f"  {'─'*50}")
+            # File header like Cline
+            print(f"\n  ┌─ 📄 {file_spec['path']}")
+            print(f"  │  {file_spec['description']}")
+            print(f"  └─{'─'*50}")
             
             prompt = f"""Generate the complete code for this file:
 
@@ -142,24 +144,21 @@ File: {file_spec['path']}
 Type: {file_spec['type']}
 Purpose: {file_spec['description']}
 
-Output the COMPLETE file content. If this is code, include all imports and full implementation.
-If this is documentation, write comprehensive docs.
-Do NOT skip this file. Provide actual content."""
+Output the COMPLETE file content. No explanations, just the code."""
             
-            # Stream generation - show content as it comes
-            print(f"  📄 {file_spec['path']}")
-            print(f"  {'─'*50}")
+            # Stream with indentation for file display
+            content = self.generator.generate_stream_indented(
+                prompt, 
+                max_tokens=4000, 
+                temperature=0.2,
+                indent="  │  "
+            )
             
-            content = self.generator.generate_stream(prompt, max_tokens=4000, temperature=0.2)
+            print(f"  └─ ✓ Generated {len(content)} chars")
             
-            # Check if empty
             if not content or len(content.strip()) == 0:
                 print(f"  ⚠️ Empty response, retrying...")
                 content = self.generator.generate(prompt, max_tokens=4000, temperature=0.3)
-            
-            if not content or len(content.strip()) == 0:
-                print(f"  ⚠️ Still empty, creating placeholder")
-                content = self._create_placeholder(file_spec)
             
             generated_files.append({
                 'path': file_spec['path'],
@@ -167,49 +166,12 @@ Do NOT skip this file. Provide actual content."""
                 'type': file_spec['type'],
                 'content': content
             })
-            
-            print(f"\n  ✓ Generated {len(content)} chars")
         
         return generated_files
-
-    def _create_placeholder(self, file_spec: dict) -> str:
-        """Create placeholder content based on file type"""
-        path = file_spec['path']
-        
-        if path.endswith('.py'):
-            return f"""# {file_spec['description']}
-
-def main():
-    print("Hello from {path}")
-
-if __name__ == "__main__":
-    main()
-"""
-        elif path.endswith('.html'):
-            return """<!DOCTYPE html>
-<html>
-<head>
-    <title>Project</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <h1>Hello World</h1>
-    <script src="app.js"></script>
-</body>
-</html>
-"""
-        elif path.endswith('.md'):
-            return f"# {file_spec['description']}\n\nProject documentation placeholder.\n"
-        else:
-            return f"# {file_spec['description']}\n"
-
-    def _format_other_files(self, all_files: list, current_file: dict) -> str:
-        """Format other files for context"""
-        others = [f for f in all_files if f['path'] != current_file['path']]
-        return "\n".join([f"- {f['path']}: {f['description']}" for f in others])
     
     def write_files(self, generated_files: list):
         """Write generated files to disk"""
+        print(f"\n  💾 Writing files:")
         for file in generated_files:
             filepath = self.output_dir / file['path']
             
@@ -220,7 +182,7 @@ if __name__ == "__main__":
             with open(filepath, 'w') as f:
                 f.write(file['content'])
             
-            print(f"  ✓ Created {filepath}")
+            print(f"  ✓ {filepath}")
     
     def final_review(self, generated_files: list):
         """GPT-OSS-120B reviews the complete project"""
@@ -244,7 +206,7 @@ Provide brief feedback."""
         
         review = self.orchestrator.generate(prompt, max_tokens=1000, temperature=0.3)
         print(f"\n  Review: {review[:500]}...")
-
+    
     def modify_project(self, modification_request: str):
         """Modify existing project based on user request"""
         print(f"\n{'='*60}")
@@ -269,7 +231,7 @@ Provide brief feedback."""
         plan = self._plan_modification(modification_request, current_files)
         
         print(f"\n  Changes to make:")
-        for change in plan['changes']:
+        for change in plan.get('changes', []):
             print(f"    - {change['action']}: {change['file']}")
         
         # Step 3: Execute modifications
@@ -287,8 +249,9 @@ Provide brief feedback."""
             # Skip hidden directories
             dirs[:] = [d for d in dirs if not d.startswith('.')]
             for filename in filenames:
-                filepath = os.path.join(root, filename)
-                files.append(filepath)
+                if not filename.startswith('.'):
+                    filepath = os.path.join(root, filename)
+                    files.append(filepath)
         return files
     
     def _plan_modification(self, request: str, current_files: list) -> dict:
@@ -306,10 +269,9 @@ Plan the changes needed. Return JSON:
 {{
     "changes": [
         {{
-            "action": "modify/create/delete",
+            "action": "modify",
             "file": "path/to/file",
-            "description": "what to change",
-            "new_content": "complete new content if create/modify"
+            "description": "what to change"
         }}
     ]
 }}
@@ -333,34 +295,23 @@ Only include files that need changes. Be specific."""
     
     def _execute_modifications(self, plan: dict, current_files: list):
         """Execute the planned modifications"""
-        for i, change in enumerate(plan['changes'], 1):
-            print(f"\n  [{i}/{len(plan['changes'])}] {change['action']}: {change['file']}")
+        changes = plan.get('changes', [])
+        
+        if not changes:
+            print("  No changes detected")
+            return
+        
+        for i, change in enumerate(changes, 1):
+            print(f"\n  ┌─ 🔧 {change['action']}: {change['file']}")
+            print(f"  │  {change['description']}")
+            print(f"  └─{'─'*50}")
             
-            if change['action'] == 'create':
-                # Generate new file
-                prompt = f"""Create this new file for the project:
-
-File: {change['file']}
-Purpose: {change['description']}
-
-Generate complete file content."""
-                
-                content = self.generator.generate_stream(prompt, max_tokens=3000)
-                
-                # Write file
-                filepath = self.output_dir / change['file']
-                filepath.parent.mkdir(parents=True, exist_ok=True)
-                with open(filepath, 'w') as f:
-                    f.write(content)
-                print(f"  ✓ Created {filepath}")
+            filepath = self.output_dir / change['file']
             
-            elif change['action'] == 'modify':
-                # Read existing file
-                filepath = self.output_dir / change['file']
-                if filepath.exists():
-                    current_content = filepath.read_text()
-                    
-                    prompt = f"""Modify this existing file:
+            if change['action'] == 'modify' and filepath.exists():
+                current_content = filepath.read_text()
+                
+                prompt = f"""Modify this existing file:
 
 File: {change['file']}
 Current content:
@@ -369,11 +320,34 @@ Current content:
 Change needed: {change['description']}
 
 Output the COMPLETE new file content."""
-                    
-                    new_content = self.generator.generate_stream(prompt, max_tokens=4000)
-                    
-                    with open(filepath, 'w') as f:
-                        f.write(new_content)
-                    print(f"  ✓ Modified {filepath}")
-                else:
-                    print(f"  ⚠️ File not found: {change['file']}")
+                
+                new_content = self.generator.generate_stream_indented(
+                    prompt,
+                    max_tokens=4000,
+                    temperature=0.2,
+                    indent="  │  "
+                )
+                
+                with open(filepath, 'w') as f:
+                    f.write(new_content)
+                print(f"  └─ ✓ Modified {filepath}")
+            
+            elif change['action'] == 'create':
+                prompt = f"""Create this new file:
+
+File: {change['file']}
+Purpose: {change['description']}
+
+Output complete file content."""
+                
+                content = self.generator.generate_stream_indented(
+                    prompt,
+                    max_tokens=3000,
+                    temperature=0.2,
+                    indent="  │  "
+                )
+                
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                with open(filepath, 'w') as f:
+                    f.write(content)
+                print(f"  └─ ✓ Created {filepath}")
