@@ -59,6 +59,7 @@ echo 'alias qgenerate="python3 ~/.qwen-code-agent/agent.py generate"' >> ~/.zshr
 echo 'alias qsearch="python3 ~/.qwen-code-agent/agent.py qsearch"' >> ~/.zshrc
 echo 'alias qresearch="python3 ~/.qwen-code-agent/agent.py qresearch"' >> ~/.zshrc
 echo 'alias qbuild="python3 ~/.qwen-code-agent/agent.py qbuild"' >> ~/.zshrc
+echo 'alias qmodify="python3 ~/.qwen-code-agent/agent.py qmodify"' >> ~/.zshrc
 
 echo ""
 echo "✅ Installation complete!"
