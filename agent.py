@@ -14,9 +14,8 @@ Usage:
     python agent.py summarize path/to/file.py
     python agent.py explain path/to/file.py
     python agent.py generate "a fastapi GET /health endpoint"
-    python agent.py review path/to/file.py
-    python agent.py chat                     # freeform REPL, no file context
-    python agent.py chat path/to/file.py      # freeform REPL, with file loaded as context
+    python agent.py qsearch "what is langchain"
+    python agent.py qresearch "fastapi vs flask"
 
 Config (model name, host, temperature, etc.) lives in config.py.
 """
@@ -29,6 +28,7 @@ import argparse
 from pathlib import Path
 
 import requests
+import web_tools
 
 from config import (
     OLLAMA_HOST,
@@ -42,12 +42,6 @@ from config import (
 # --------------------------------------------------------------------------
 # Progress animation
 # --------------------------------------------------------------------------
-#
-# NOTE: Ollama does not expose real-time progress while it's processing
-# (prefilling) the prompt - there's no API signal for "on token 500 of 4000".
-# So this is a cosmetic "still working" indicator, not a genuine progress
-# tracker. It runs until the first real token streams back, then disappears
-# and actual output takes over.
 
 BAR_WIDTH = 40
 
@@ -183,46 +177,114 @@ def cmd_explain(args):
     print(f"--- explaining {args.file} ---\n")
     call_ollama(prompt)
 
-
-def cmd_review(args):
-    code = read_file_safely(args.file)
-    prompt = build_prompt("review", filename=args.file, code=code)
-    print(f"--- reviewing {args.file} ---\n")
-    call_ollama(prompt)
-
-
 def cmd_generate(args):
     description = " ".join(args.description)
+    
+    # Validate input
+    if not description.strip():
+        print("[error] Description cannot be empty.")
+        return
+        
     prompt = build_prompt("generate", description=description)
     print(f"--- generating: {description} ---\n")
     call_ollama(prompt)
 
 
-def cmd_chat(args):
-    context = ""
-    if args.file:
-        code = read_file_safely(args.file)
-        context = f"You are working with the following file ({args.file}):\n\n```\n{code}\n```\n\n"
-        print(f"[loaded {args.file} as context, {len(code)} chars]\n")
+def cmd_web_search(args):
+    """Search web and answer question with grounding"""
+    question = " ".join(args.question) if isinstance(args.question, list) else args.question
+    
+    # Validate input
+    if not question.strip():
+        print("[error] Question cannot be empty.")
+        return
+    
+    # Search and fetch
+    results = web_tools.search_and_fetch(question)
+    
+    if not results:
+        print("[no results found]")
+        return
+    
+    # Build context
+    context = web_tools.build_context_from_results(results)
+    
+    # Build prompt
+    prompt = build_prompt("web_search", question=question, context=context)
+    
+    print(f"\n--- answering: {question} ---\n")
+    answer = call_ollama(prompt)
+    
+    # Add clickable sources
+    print(f"\n\n{'='*50}")
+    print("SOURCES:")
+    for i, result in enumerate(results, 1):
+        link = result.get('link', '')
+        title = result.get('title', 'N/A')
+        if link:
+            print(f"[{i}] {title}")
+            print(f"    {link}")
+        else:
+            print(f"[{i}] {title}")
+    
+    return answer
 
-    print("Freeform chat. Type 'exit' or Ctrl+C to quit.\n")
-    history = context
-    try:
-        while True:
-            user_input = input(">>> ")
-            if user_input.strip().lower() in ("exit", "quit"):
-                break
-            prompt = f"{history}\n\nUser: {user_input}\nAssistant:"
-            print()
-            reply = call_ollama(prompt)
-            print()
-            # keep a rolling window so context doesn't grow unbounded
-            history += f"\n\nUser: {user_input}\nAssistant: {reply}"
-            if len(history) > MAX_FILE_CHARS * 2:
-                history = context + history[-MAX_FILE_CHARS:]
-    except KeyboardInterrupt:
-        print("\nbye")
 
+def cmd_web_research(args):
+    """Deep research mode - fetch more sources and analyze"""
+    question = " ".join(args.question) if isinstance(args.question, list) else args.question
+    
+    # Validate input
+    if not question.strip():
+        print("[error] Research topic cannot be empty.")
+        return
+    
+    print(f"[researching: {question}]")
+    
+    # Get results for research
+    results = web_tools.search_and_fetch(question)
+    
+    if not results:
+        print("[no results found]")
+        return
+    
+    # Build detailed context
+    context = web_tools.build_context_from_results(results)
+    
+    # Research prompt
+    research_prompt = f"""Research Task: {question}
+
+Available Information:
+{context}
+
+Provide a comprehensive analysis:
+1. Summary of key findings
+2. Different perspectives/approaches
+3. Code examples if relevant
+4. Best practices
+5. Common pitfalls
+6. Recommended resources
+
+Important: Do NOT include a "Sources" section - sources will be displayed separately.
+You may reference sources inline as [1], [2], etc.
+"""
+    
+    print("\n--- research findings ---\n")
+    answer = call_ollama(research_prompt)
+    
+    # Add clickable sources
+    print(f"\n\n{'='*50}")
+    print("SOURCES:")
+    for i, result in enumerate(results, 1):
+        link = result.get('link', '')
+        title = result.get('title', 'N/A')
+        if link:
+            print(f"[{i}] {title}")
+            print(f"    {link}")
+        else:
+            print(f"[{i}] {title}")
+    
+    return answer
 
 # --------------------------------------------------------------------------
 # CLI wiring
@@ -242,17 +304,17 @@ def main():
     p_exp.add_argument("file")
     p_exp.set_defaults(func=cmd_explain)
 
-    p_rev = sub.add_parser("review", help="Code review a file (bugs, style, suggestions)")
-    p_rev.add_argument("file")
-    p_rev.set_defaults(func=cmd_review)
-
     p_gen = sub.add_parser("generate", help="Generate code from a description")
     p_gen.add_argument("description", nargs="+")
     p_gen.set_defaults(func=cmd_generate)
 
-    p_chat = sub.add_parser("chat", help="Freeform REPL, optionally with a file loaded as context")
-    p_chat.add_argument("file", nargs="?", default=None)
-    p_chat.set_defaults(func=cmd_chat)
+    p_search = sub.add_parser("qsearch", help="Search web and answer question")
+    p_search.add_argument("question", nargs="+", help="Question to search and answer")
+    p_search.set_defaults(func=cmd_web_search)
+
+    p_research = sub.add_parser("qresearch", help="Deep research on a topic")
+    p_research.add_argument("question", nargs="+", help="Topic to research")
+    p_research.set_defaults(func=cmd_web_research)
 
     args = parser.parse_args()
     args.func(args)

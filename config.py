@@ -20,3 +20,20 @@ DEFAULT_TEMPERATURE = 0.2
 MAX_FILE_CHARS = 60_000
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+# V2 Web Search Settings
+MAX_SEARCH_RESULTS = 5
+MAX_PAGE_CHARS = 5000
+SEARCH_TIMEOUT = 10
+TRUSTED_DOMAINS = [
+    "github.com",
+    "stackoverflow.com",
+    "python.org",
+    "docs.python.org",
+    "wikipedia.org",
+    "medium.com",
+    "dev.to",
+    "realpython.com",
+    "geeksforgeeks.org",
+    "towardsdatascience.com"
+]
