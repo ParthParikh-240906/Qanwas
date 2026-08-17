@@ -325,12 +325,7 @@ Change needed: {change['description']}
 
 Output the COMPLETE new file content."""
                 
-                new_content = self.generator.generate_stream_indented(
-                    prompt,
-                    max_tokens=4000,
-                    temperature=0.2,
-                    indent="  │  "
-                )
+                new_content = self.generator.generate(prompt, max_tokens=4000, temperature=0.2)
                 
                 with open(filepath, 'w') as f:
                     f.write(new_content)
