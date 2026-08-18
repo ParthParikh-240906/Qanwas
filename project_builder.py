@@ -53,26 +53,29 @@ class ProjectBuilder:
         if complexity == "simple":
             file_instructions = """
 For SIMPLE requests:
-- Return 1-3 files MAXIMUM
+- Return 1-3 files MAXIMUM (including README.md)
 - NO backend, NO Docker, NO package.json, NO config files
 - Just HTML/CSS/JS for frontend OR single Python file for backend
-- Keep it minimal - only essential files"""
+- Keep it minimal - only essential files
+- ALWAYS include README.md"""
             max_files = 3
         elif complexity == "medium":
             file_instructions = """
 For MEDIUM requests:
-- Return 3-5 files
+- Return 3-5 files (including README.md)
 - Simple backend + frontend
 - Include requirements.txt or package.json
-- No Docker unless explicitly requested"""
+- No Docker unless explicitly requested
+- ALWAYS include README.md"""
             max_files = 5
         else:
             file_instructions = """
 For COMPLEX requests:
-- Return 5-10 files
+- Return 5-10 files (including README.md)
 - Full backend + frontend
 - Include config files, README, Docker if needed
-- Production-ready structure"""
+- Production-ready structure
+- ALWAYS include README.md"""
             max_files = 10
         
         prompt = f"""You are an expert software architect. Plan a project for this request:
@@ -86,6 +89,12 @@ IMPORTANT RULES:
 - Maximum files: {max_files}
 - Only include files that are ACTUALLY needed
 - For simple requests, just give the essential files
+- ALWAYS include a README.md file
+- README.md should contain:
+  - Project description
+  - Installation/setup instructions
+  - HOW TO START/RUN the project
+  - Basic usage
 
 Return ONLY valid JSON (no markdown, no explanations):
 {{"project_name": "name", "description": "brief", "tech_stack": ["tech1", "tech2"], "files": [{{"path": "path/to/file", "description": "what it does", "type": "frontend/backend/config/docs"}}]}}
@@ -106,7 +115,7 @@ Be specific about file paths and purposes."""
         try:
             plan = json.loads(response)
             if 'files' in plan and len(plan['files']) > 0:
-                return plan
+                return self._ensure_readme(plan, user_request)
         except:
             pass
         
@@ -116,7 +125,7 @@ Be specific about file paths and purposes."""
             try:
                 plan = json.loads(json_match.group())
                 if 'files' in plan and len(plan['files']) > 0:
-                    return plan
+                    return self._ensure_readme(plan, user_request)
             except:
                 pass
         
@@ -125,22 +134,23 @@ Be specific about file paths and purposes."""
         if json_match:
             try:
                 files = json.loads(json_match.group())
-                return {"project_name": "project", "files": files}
+                plan = {"project_name": "project", "files": files}
+                return self._ensure_readme(plan, user_request)
             except:
                 pass
         
         print("  [warn] JSON parsing failed, using fallback based on complexity")
         
-        # Fallback based on complexity
+        # Fallback based on complexity (all include README)
         if complexity == "simple":
             return {
                 "project_name": "simple-app",
                 "description": user_request,
                 "tech_stack": ["html", "css", "javascript"],
                 "files": [
+                    {"path": "README.md", "description": "Project overview and start instructions", "type": "docs"},
                     {"path": "index.html", "description": "Main HTML page", "type": "frontend"},
-                    {"path": "style.css", "description": "Styles for the page", "type": "frontend"},
-                    {"path": "app.js", "description": "JavaScript for interactivity", "type": "frontend"}
+                    {"path": "style.css", "description": "Styles for the page", "type": "frontend"}
                 ]
             }
         elif complexity == "medium":
@@ -149,11 +159,11 @@ Be specific about file paths and purposes."""
                 "description": user_request,
                 "tech_stack": ["python", "html", "css", "javascript"],
                 "files": [
+                    {"path": "README.md", "description": "Project documentation and start instructions", "type": "docs"},
                     {"path": "backend/main.py", "description": "Backend API server", "type": "backend"},
                     {"path": "backend/requirements.txt", "description": "Python dependencies", "type": "config"},
                     {"path": "frontend/index.html", "description": "Frontend HTML", "type": "frontend"},
-                    {"path": "frontend/style.css", "description": "Frontend styles", "type": "frontend"},
-                    {"path": "README.md", "description": "Project documentation", "type": "docs"}
+                    {"path": "frontend/style.css", "description": "Frontend styles", "type": "frontend"}
                 ]
             }
         else:
@@ -162,12 +172,12 @@ Be specific about file paths and purposes."""
                 "description": user_request,
                 "tech_stack": ["python", "html", "css", "javascript"],
                 "files": [
+                    {"path": "README.md", "description": "Project documentation and start instructions", "type": "docs"},
                     {"path": "backend/main.py", "description": "Backend API server", "type": "backend"},
                     {"path": "backend/requirements.txt", "description": "Python dependencies", "type": "config"},
                     {"path": "frontend/index.html", "description": "Frontend HTML", "type": "frontend"},
                     {"path": "frontend/style.css", "description": "Frontend styles", "type": "frontend"},
-                    {"path": "frontend/app.js", "description": "Frontend JavaScript", "type": "frontend"},
-                    {"path": "README.md", "description": "Project documentation", "type": "docs"}
+                    {"path": "frontend/app.js", "description": "Frontend JavaScript", "type": "frontend"}
                 ]
             }
     
@@ -217,7 +227,26 @@ Be specific about file paths and purposes."""
             # Show progress (not the code)
             print(f"\n  [{i}/{len(plan['files'])}] 📄 {file_spec['path']}")
             
-            prompt = f"""Generate the complete code for this file:
+            # Special prompt for README.md
+            if file_spec['path'].lower().endswith('readme.md'):
+                prompt = f"""Generate a README.md for this project:
+
+Project: {plan['project_name']}
+Description: {plan.get('description', 'N/A')}
+Tech stack: {', '.join(plan.get('tech_stack', []))}
+Files in project: {', '.join([f['path'] for f in plan['files']])}
+
+The README MUST include:
+1. Project title and description
+2. What the project does
+3. Installation/setup instructions (if any)
+4. HOW TO START/RUN the project (exact commands)
+5. Basic usage examples
+6. Project structure overview
+
+Use proper markdown formatting. Be clear and concise."""
+            else:
+                prompt = f"""Generate the complete code for this file:
 
 Project: {plan['project_name']}
 File: {file_spec['path']}
@@ -288,10 +317,16 @@ Check:
 3. Any missing dependencies?
 4. Any obvious bugs?
 
-Provide brief feedback."""
+FORMATTING RULES:
+- Use bullet points ONLY
+- NO tables, NO markdown tables
+- Keep it brief (max 200 words)
+- Be direct and concise"""
         
         review = self.orchestrator.generate(prompt, max_tokens=1000, temperature=0.3)
-        print(f"\n  Review: {review[:500]}...")
+        print(f"\n  Review:")
+        print(f"  {'─'*50}")
+        print(f"  {review[:500]}")
     
     def modify_project(self, modification_request: str):
         """Modify existing project based on user request"""
@@ -432,3 +467,23 @@ Output complete file content."""
                 with open(filepath, 'w') as f:
                     f.write(content)
                 print(f"  └─ ✓ Created {filepath}")
+
+    def _ensure_readme(self, plan: dict, user_request: str) -> dict:
+        """Ensure README.md is always in the plan"""
+        if 'files' not in plan:
+            plan['files'] = []
+        
+        # Check if README exists
+        has_readme = any(f['path'].lower() == 'readme.md' or 
+                        f['path'].lower().endswith('/readme.md') 
+                        for f in plan['files'])
+        
+        if not has_readme:
+            # Add README as first file
+            plan['files'].insert(0, {
+                "path": "README.md",
+                "description": "Project overview, setup instructions, and start command",
+                "type": "docs"
+            })
+        
+        return plan
