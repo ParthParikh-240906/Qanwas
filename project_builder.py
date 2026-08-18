@@ -556,7 +556,7 @@ Output complete file content."""
         
         return plan
 
-    def validate_and_fix(self, user_request: str, generated_files: list, max_iterations: int = 3):
+    def validate_and_fix(self, user_request: str, generated_files: list, max_iterations: int = 5):
         """GPT-OSS-120B reviews code and auto-fixes if mismatched"""
         print(f"\n{'='*60}")
         print(f"🔍 VALIDATION & AUTO-FIX")

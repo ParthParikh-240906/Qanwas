@@ -1,56 +1,24 @@
 # qwen-code-agent
 
-**V5.3**
+**V5**
 
-An autonomous AI project builder that orchestrates GPT-OSS models via Groq
-to create complete full-stack applications. V5 transforms the agent from a
-Q&A tool into a software engineer — it plans architectures, generates
-multiple files with real-time streaming, writes them to disk, and can
-modify existing projects.
+An autonomous AI software engineer that plans, builds, and modifies complete
+full-stack applications. Powered by GPT-OSS-120B for intelligent architecture
+decisions and GPT-OSS-20B for rapid code generation, V5 transforms simple
+requests into production-ready projects in minutes.
 
-One-line install. Zero cost. Real-time code generation. Autonomous project
-building. No local setup required.
+Key capabilities:
+- 🧠 Autonomous architecture planning with complexity detection
+- 📁 Multi-file project generation (5-10+ files)
+- 🔧 Intelligent project modification (qmodify)
+- 🔍 Self-validation with auto-fix (catches and fixes its own bugs)
+- 📄 Always generates README with setup instructions
+- 🌐 Web search and research grounded in real sources
+- ⚡ Real-time progress display
+- 💾 Writes files directly to your project folder
 
-## What's new in V5
-
-- **Autonomous project builder** — `qbuild` creates complete projects with
-  frontend, backend, configs, and docs
-- **Real-time code streaming** — watch code being written file-by-file
-  like Cline/Devin
-- **Project modification** — `qmodify` analyzes existing projects and
-  makes targeted changes
-- **Intelligent architecture** — GPT-OSS-120B plans the best structure for
-  each project
-- **Multi-file generation** — creates 5-10+ files per project automatically
-
-## Architecture
-
-```
-User Request: "Build a PDF analysis tool"
-    ↓
-[GPT-OSS-120B Architect]
-    Plans project structure:
-    ├── backend/main.py
-    ├── backend/requirements.txt
-    ├── frontend/index.html
-    ├── frontend/style.css
-    ├── frontend/app.js
-    └── README.md
-    ↓
-[GPT-OSS-20B Generator - streams each file]
-    ├── [1/6] Generating backend/main.py... (real-time)
-    ├── [2/6] Generating backend/requirements.txt...
-    ├── [3/6] Generating frontend/index.html...
-    └── ...
-    ↓
-[File Writer]
-    Creates files in current directory
-    ↓
-[GPT-OSS-120B Reviewer]
-    Validates project completeness
-    ↓
-✅ PROJECT COMPLETE!
-```
+One-line install. Zero cost. No local setup. 
+Just describe what you want, and watch it build.
 
 ## Quick install
 
@@ -310,10 +278,8 @@ In `.env`:
 - DuckDuckGo integration + BeautifulSoup page fetching
 - Grounded Q&A with source citation
 
-**V1.1**
-- Real line/char count display
-- Animated progress bar
-
-**V1.0**
+**V1**
 - Initial release: `summarize`, `explain`, `generate`
 - Templated prompts for consistent output
+- Real line/char count display
+- Animated progress bar
