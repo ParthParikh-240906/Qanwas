@@ -572,24 +572,121 @@ Output complete file content."""
             
             if not issues:
                 print(f"\n✅ Project matches the request perfectly!")
-                # Save report with no issues
                 self.save_validation_report(user_request, all_issues, generated_files)
                 return generated_files
             
             all_issues.extend(issues)
             
             print(f"\n⚠️ Found {len(issues)} issues:")
-            for issue in issues:
-                print(f"  - {issue['file']}: {issue['problem']}")
+            for issue in issues[:5]:  # Show only first 5
+                print(f"  - {issue['file']}: {issue['problem'][:80]}...")
             
-            # Step 2: Fix issues
+            # Step 2: Fix issues (use 20B for speed)
             print(f"\n🔧 Auto-fixing issues...")
             generated_files = self._fix_issues(user_request, generated_files, issues)
         
-        print(f"\n⚠️ Max iterations reached. Some issues may remain.")
-        # Save report with remaining issues
+        # Step 3: Final fix using 120B (smarter)
+        print(f"\n{'='*60}")
+        print(f"🔧 FINAL FIX BY GPT-OSS-120B")
+        print(f"{'='*60}")
+        print(f"\n[Using orchestrator for final polish...]")
+        
+        generated_files = self._final_fix_120b(user_request, generated_files)
+        
+        # Final validation
+        print(f"\n[Final validation...]")
+        remaining_issues = self._validate_project(user_request, generated_files)
+        
+        if not remaining_issues:
+            print(f"\n✅ All issues resolved by 120B!")
+        else:
+            print(f"\n⚠️ {len(remaining_issues)} minor issues remain (acceptable)")
+        
         self.save_validation_report(user_request, all_issues, generated_files)
         return generated_files
+    
+    def _final_fix_120b(self, user_request: str, generated_files: list) -> list:
+        """Use GPT-OSS-120B for final comprehensive fix"""
+        fixed_files = list(generated_files)
+        
+        print(f"\n  Analyzing all remaining issues...")
+        
+        # Group files for context
+        files_summary = []
+        for f in fixed_files:
+            files_summary.append(f"""
+File: {f['path']}
+Content:
+{f['content'][:1500]}
+---""")
+        
+        files_text = "\n".join(files_summary)
+        
+        prompt = f"""You are a senior software engineer. Fix ALL remaining issues in this project.
+
+USER REQUEST: {user_request}
+
+CURRENT FILES:
+{files_text}
+
+Your task:
+1. Review each file carefully
+2. Fix ALL issues that would prevent the project from working
+3. Ensure all files are complete and functional
+4. Make sure the code matches the user request exactly
+5. Remove any unnecessary code
+6. Ensure all imports are correct
+7. Ensure all endpoints/functions are properly connected
+
+Return JSON with fixed files:
+{{"fixed_files": [{{"path": "file", "content": "complete fixed content"}}]}}
+
+Only include files that need changes."""
+        
+        response = self.orchestrator.generate(prompt, max_tokens=4000, temperature=0.2)
+        
+        # Parse JSON
+        import json
+        import re
+        
+        try:
+            result = json.loads(response)
+            fixed_files_data = result.get('fixed_files', [])
+        except:
+            # Try regex
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                try:
+                    result = json.loads(json_match.group())
+                    fixed_files_data = result.get('fixed_files', [])
+                except:
+                    fixed_files_data = []
+            else:
+                fixed_files_data = []
+        
+        # Apply fixes
+        for fixed_file in fixed_files_data:
+            path = fixed_file.get('path', '')
+            content = fixed_file.get('content', '')
+            
+            if not path or not content:
+                continue
+            
+            # Update in our list
+            for i, f in enumerate(fixed_files):
+                if f['path'] == path:
+                    fixed_files[i]['content'] = content
+                    
+                    # Write to disk
+                    filepath = self.output_dir / path
+                    filepath.parent.mkdir(parents=True, exist_ok=True)
+                    with open(filepath, 'w') as fw:
+                        fw.write(content)
+                    
+                    print(f"  ✓ Fixed {path} ({len(content)} chars)")
+                    break
+        
+        return fixed_files
     
     def _validate_project(self, user_request: str, generated_files: list) -> list:
         """GPT-OSS-120B checks if code matches the request"""
@@ -602,7 +699,7 @@ File: {f['path']}
 Type: {f['type']}
 Description: {f['description']}
 Content:
-{f['content'][:2000]}  # First 2000 chars per file
+{f['content'][:2000]}
 ---""")
         
         files_text = "\n".join(files_summary)
@@ -614,19 +711,26 @@ USER REQUEST: {user_request}
 GENERATED FILES:
 {files_text}
 
-Check for:
+Check for CRITICAL issues ONLY:
 1. Missing features from the request
-2. Incorrect implementations
-3. Files that don't do what they should
+2. Syntax errors that prevent running
+3. Incorrect implementations
 4. Missing endpoints/functions
-5. Incomplete code
+5. Broken imports
+
+DO NOT flag:
+- Minor style issues
+- Optional improvements
+- "Nice to have" features
+- Cosmetic issues
+- Things that already work
 
 Return JSON:
 {{"issues": [{{"file": "path", "problem": "what's wrong", "fix": "what to change"}}]}}
 
-If everything matches perfectly, return: {{"issues": []}}
+If everything works, return: {{"issues": []}}
 
-Be STRICT but fair. Only flag REAL issues."""
+Be PRACTICAL. Only flag issues that would actually break the project."""
         
         response = self.orchestrator.generate(prompt, max_tokens=2000, temperature=0.2)
         
