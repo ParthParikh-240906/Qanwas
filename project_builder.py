@@ -43,27 +43,54 @@ class ProjectBuilder:
         print(f"{'='*60}\n")
     
     def plan_project(self, user_request: str) -> dict:
-        """GPT-OSS-120B plans the entire project"""
+        """GPT-OSS-120B plans the entire project with complexity detection"""
+        
+        # Quick complexity detection (no extra API call)
+        complexity = self._detect_complexity(user_request)
+        print(f"  [complexity: {complexity}]")
+        
+        # Adjust prompt based on complexity
+        if complexity == "simple":
+            file_instructions = """
+For SIMPLE requests:
+- Return 1-3 files MAXIMUM
+- NO backend, NO Docker, NO package.json, NO config files
+- Just HTML/CSS/JS for frontend OR single Python file for backend
+- Keep it minimal - only essential files"""
+            max_files = 3
+        elif complexity == "medium":
+            file_instructions = """
+For MEDIUM requests:
+- Return 3-5 files
+- Simple backend + frontend
+- Include requirements.txt or package.json
+- No Docker unless explicitly requested"""
+            max_files = 5
+        else:
+            file_instructions = """
+For COMPLEX requests:
+- Return 5-10 files
+- Full backend + frontend
+- Include config files, README, Docker if needed
+- Production-ready structure"""
+            max_files = 10
+        
         prompt = f"""You are an expert software architect. Plan a project for this request:
 
 "{user_request}"
 
-Think about the BEST architecture. Consider:
-- What files are needed?
-- What's the most efficient structure?
-- What technologies to use?
-- How components interact?
+{file_instructions}
 
-IMPORTANT: For full-stack applications, ALWAYS include:
-- Frontend files (HTML, CSS, JS)
-- Backend files (Python/Node)
-- Config files (requirements.txt, package.json)
-- README.md
+IMPORTANT RULES:
+- Do NOT over-engineer. Match the complexity of the request.
+- Maximum files: {max_files}
+- Only include files that are ACTUALLY needed
+- For simple requests, just give the essential files
 
 Return ONLY valid JSON (no markdown, no explanations):
 {{"project_name": "name", "description": "brief", "tech_stack": ["tech1", "tech2"], "files": [{{"path": "path/to/file", "description": "what it does", "type": "frontend/backend/config/docs"}}]}}
 
-Be specific. Include 5-10 files for a full-stack app."""
+Be specific about file paths and purposes."""
         
         response = self.orchestrator.generate(prompt, max_tokens=2000, temperature=0.3)
         
@@ -77,7 +104,9 @@ Be specific. Include 5-10 files for a full-stack app."""
         
         # Method 1: Direct JSON parse
         try:
-            return json.loads(response)
+            plan = json.loads(response)
+            if 'files' in plan and len(plan['files']) > 0:
+                return plan
         except:
             pass
         
@@ -85,7 +114,9 @@ Be specific. Include 5-10 files for a full-stack app."""
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             try:
-                return json.loads(json_match.group())
+                plan = json.loads(json_match.group())
+                if 'files' in plan and len(plan['files']) > 0:
+                    return plan
             except:
                 pass
         
@@ -98,22 +129,73 @@ Be specific. Include 5-10 files for a full-stack app."""
             except:
                 pass
         
-        print("  [warn] JSON parsing failed, using enhanced fallback")
+        print("  [warn] JSON parsing failed, using fallback based on complexity")
         
-        # Enhanced fallback for full-stack
-        return {
-            "project_name": "fullstack-app",
-            "description": user_request,
-            "tech_stack": ["python", "html", "css", "javascript"],
-            "files": [
-                {"path": "backend/main.py", "description": "Backend API server", "type": "backend"},
-                {"path": "backend/requirements.txt", "description": "Python dependencies", "type": "config"},
-                {"path": "frontend/index.html", "description": "Frontend HTML", "type": "frontend"},
-                {"path": "frontend/style.css", "description": "Frontend styles", "type": "frontend"},
-                {"path": "frontend/app.js", "description": "Frontend JavaScript", "type": "frontend"},
-                {"path": "README.md", "description": "Project documentation", "type": "docs"}
-            ]
-        }
+        # Fallback based on complexity
+        if complexity == "simple":
+            return {
+                "project_name": "simple-app",
+                "description": user_request,
+                "tech_stack": ["html", "css", "javascript"],
+                "files": [
+                    {"path": "index.html", "description": "Main HTML page", "type": "frontend"},
+                    {"path": "style.css", "description": "Styles for the page", "type": "frontend"},
+                    {"path": "app.js", "description": "JavaScript for interactivity", "type": "frontend"}
+                ]
+            }
+        elif complexity == "medium":
+            return {
+                "project_name": "web-app",
+                "description": user_request,
+                "tech_stack": ["python", "html", "css", "javascript"],
+                "files": [
+                    {"path": "backend/main.py", "description": "Backend API server", "type": "backend"},
+                    {"path": "backend/requirements.txt", "description": "Python dependencies", "type": "config"},
+                    {"path": "frontend/index.html", "description": "Frontend HTML", "type": "frontend"},
+                    {"path": "frontend/style.css", "description": "Frontend styles", "type": "frontend"},
+                    {"path": "README.md", "description": "Project documentation", "type": "docs"}
+                ]
+            }
+        else:
+            return {
+                "project_name": "fullstack-app",
+                "description": user_request,
+                "tech_stack": ["python", "html", "css", "javascript"],
+                "files": [
+                    {"path": "backend/main.py", "description": "Backend API server", "type": "backend"},
+                    {"path": "backend/requirements.txt", "description": "Python dependencies", "type": "config"},
+                    {"path": "frontend/index.html", "description": "Frontend HTML", "type": "frontend"},
+                    {"path": "frontend/style.css", "description": "Frontend styles", "type": "frontend"},
+                    {"path": "frontend/app.js", "description": "Frontend JavaScript", "type": "frontend"},
+                    {"path": "README.md", "description": "Project documentation", "type": "docs"}
+                ]
+            }
+    
+    def _detect_complexity(self, user_request: str) -> str:
+        """Simple keyword-based complexity detection"""
+        request_lower = user_request.lower()
+        
+        # Simple indicators
+        simple_words = ["simple", "basic", "just", "hello world", "webpage", "single page", 
+                       "one page", "single file", "landing page", "static"]
+        if any(word in request_lower for word in simple_words):
+            return "simple"
+        
+        # Complex indicators
+        complex_words = ["full-stack", "full stack", "enterprise", "production", "scalable", 
+                        "microservices", "database", "auth", "payment", "real-time", 
+                        "websocket", "docker", "kubernetes", "redis", "kafka", "rag", "pipeline"]
+        if any(word in request_lower for word in complex_words):
+            return "complex"
+        
+        # Count words as heuristic
+        word_count = len(request_lower.split())
+        if word_count < 5:
+            return "simple"
+        elif word_count < 15:
+            return "medium"
+        else:
+            return "complex"
     
     def display_plan(self, plan: dict):
         """Show the project plan"""
