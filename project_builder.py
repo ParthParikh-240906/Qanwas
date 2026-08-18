@@ -386,32 +386,58 @@ Current files:
 
 Modification request: {request}
 
-Plan the changes needed. Return JSON:
-{{
-    "changes": [
-        {{
-            "action": "modify",
-            "file": "path/to/file",
-            "description": "what to change"
-        }}
-    ]
-}}
+IMPORTANT:
+- Analyze what needs to change
+- Include ALL files that need modification
+- If removing a feature, mark related files
+- Be specific about changes
 
-Only include files that need changes. Be specific."""
+Return ONLY valid JSON in this format:
+{{"changes": [{{"action": "modify", "file": "backend/app/main.py", "description": "Remove MySQL connection, add Gmail API call"}}]}}
+
+Do NOT skip files that need changes. If no files need changes, return {{"changes": []}}"""
         
         response = self.orchestrator.generate(prompt, max_tokens=3000, temperature=0.3)
         
-        # Parse JSON
+        # Debug
+        print(f"  [debug] Modification plan raw: {response[:300]}")
+        
+        # Parse JSON - try multiple methods
         import json
         import re
         
+        # Method 1: Direct JSON parse
+        try:
+            plan = json.loads(response)
+            if 'changes' in plan:
+                return plan
+        except:
+            pass
+        
+        # Method 2: Find JSON between { }
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             try:
-                return json.loads(json_match.group())
+                plan = json.loads(json_match.group())
+                if 'changes' in plan:
+                    return plan
             except:
                 pass
         
+        # Method 3: Find individual changes
+        changes = []
+        json_matches = re.findall(r'\{"action".*?\}', response, re.DOTALL)
+        for match in json_matches:
+            try:
+                change = json.loads(match)
+                changes.append(change)
+            except:
+                pass
+        
+        if changes:
+            return {"changes": changes}
+        
+        print("  [warn] Could not parse changes, returning empty")
         return {"changes": []}
     
     def _execute_modifications(self, plan: dict, current_files: list):
@@ -420,25 +446,37 @@ Only include files that need changes. Be specific."""
         
         if not changes:
             print("  No changes detected")
+            print("  [debug] Plan was:", plan)
             return
         
         for i, change in enumerate(changes, 1):
-            print(f"\n  ┌─ 🔧 {change['action']}: {change['file']}")
-            print(f"  │  {change['description']}")
+            action = change.get('action', 'modify')
+            filepath_str = change.get('file', '')
+            description = change.get('description', '')
+            
+            print(f"\n  ┌─ 🔧 {action}: {filepath_str}")
+            print(f"  │  {description}")
             print(f"  └─{'─'*50}")
             
-            filepath = self.output_dir / change['file']
+            filepath = self.output_dir / filepath_str
             
-            if change['action'] == 'modify' and filepath.exists():
+            if action == 'delete':
+                if filepath.exists():
+                    filepath.unlink()
+                    print(f"  └─ ✓ Deleted {filepath}")
+                else:
+                    print(f"  ⚠️ File not found: {filepath}")
+            
+            elif action == 'modify' and filepath.exists():
                 current_content = filepath.read_text()
                 
                 prompt = f"""Modify this existing file:
 
-File: {change['file']}
+File: {filepath_str}
+Change needed: {description}
+
 Current content:
 {current_content}
-
-Change needed: {change['description']}
 
 Output the COMPLETE new file content."""
                 
@@ -446,27 +484,25 @@ Output the COMPLETE new file content."""
                 
                 with open(filepath, 'w') as f:
                     f.write(new_content)
-                print(f"  └─ ✓ Modified {filepath}")
+                print(f"  └─ ✓ Modified {filepath_str}")
             
-            elif change['action'] == 'create':
+            elif action == 'create':
                 prompt = f"""Create this new file:
 
-File: {change['file']}
-Purpose: {change['description']}
+File: {filepath_str}
+Purpose: {description}
 
 Output complete file content."""
                 
-                content = self.generator.generate_stream_indented(
-                    prompt,
-                    max_tokens=3000,
-                    temperature=0.2,
-                    indent="  │  "
-                )
+                content = self.generator.generate(prompt, max_tokens=3000, temperature=0.2)
                 
                 filepath.parent.mkdir(parents=True, exist_ok=True)
                 with open(filepath, 'w') as f:
                     f.write(content)
-                print(f"  └─ ✓ Created {filepath}")
+                print(f"  └─ ✓ Created {filepath_str}")
+            
+            else:
+                print(f"  ⚠️ Could not process: {action} on {filepath_str}")
 
     def _ensure_readme(self, plan: dict, user_request: str) -> dict:
         """Ensure README.md is always in the plan"""
