@@ -16,96 +16,10 @@ import requests
 import web_tools
 
 from config import (
-    OLLAMA_HOST,
-    MODEL_NAME,
     DEFAULT_TEMPERATURE,
     MAX_FILE_CHARS,
     PROMPTS_DIR,
 )
-
-
-# --------------------------------------------------------------------------
-# Progress animation
-# --------------------------------------------------------------------------
-
-BAR_WIDTH = 40
-
-
-def _progress_animation(stop_event: threading.Event, label: str = "thinking"):
-    i = 0
-    while not stop_event.is_set():
-        filled = i % (BAR_WIDTH + 1)
-        bar = "=" * filled + (">" if filled < BAR_WIDTH else "")
-        sys.stdout.write(f"\r{label} [{bar:<{BAR_WIDTH + 1}}]")
-        sys.stdout.flush()
-        i += 1
-        time.sleep(0.12)
-    # clear the line once stopped
-    sys.stdout.write("\r" + " " * (len(label) + BAR_WIDTH + 4) + "\r")
-    sys.stdout.flush()
-
-
-# --------------------------------------------------------------------------
-# Core model call
-# --------------------------------------------------------------------------
-
-def call_ollama(prompt: str, temperature: float = DEFAULT_TEMPERATURE, stream: bool = True) -> str:
-    """Send a prompt to the local Ollama server and stream the response."""
-    url = f"{OLLAMA_HOST}/api/generate"
-    payload = {
-        "model": MODEL_NAME,
-        "prompt": prompt,
-        "stream": stream,
-        "options": {"temperature": temperature},
-    }
-
-    stop_event = threading.Event()
-    spinner = threading.Thread(target=_progress_animation, args=(stop_event,), daemon=True)
-    spinner.start()
-
-    try:
-        resp = requests.post(url, json=payload, stream=stream, timeout=300)
-        resp.raise_for_status()
-    except requests.exceptions.ConnectionError:
-        stop_event.set()
-        spinner.join()
-        print(f"[error] Couldn't reach Ollama at {OLLAMA_HOST}.")
-        print("        Is it running? Try: ollama serve")
-        sys.exit(1)
-    except requests.exceptions.HTTPError as e:
-        stop_event.set()
-        spinner.join()
-        print(f"[error] Ollama returned an error: {e}")
-        print(f"        Is '{MODEL_NAME}' pulled? Try: ollama pull {MODEL_NAME}")
-        sys.exit(1)
-
-    full_text = []
-    first_token = True
-    if stream:
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            chunk = json.loads(line)
-            token = chunk.get("response", "")
-            if first_token and token:
-                stop_event.set()
-                spinner.join()
-                first_token = False
-            print(token, end="", flush=True)
-            full_text.append(token)
-            if chunk.get("done"):
-                print()  # trailing newline
-        if not stop_event.is_set():
-            stop_event.set()
-            spinner.join()
-        return "".join(full_text)
-    else:
-        data = resp.json()
-        stop_event.set()
-        spinner.join()
-        print(data.get("response", ""))
-        return data.get("response", "")
-
 
 # --------------------------------------------------------------------------
 # Prompt building
