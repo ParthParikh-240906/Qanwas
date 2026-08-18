@@ -19,23 +19,22 @@ class ProjectBuilder:
         print(f"{'='*60}\n")
         
         # Step 1: Architect plans the project
-        print("[1/4] 🧠 Architect planning project structure...")
+        print("[1/3] 🧠 Architect planning project structure...")
         project_plan = self.plan_project(user_request)
         
         # Step 2: Show plan
         self.display_plan(project_plan)
         
         # Step 3: Generate each file
-        print(f"\n[2/4] 📝 Generating {len(project_plan['files'])} files...")
+        print(f"\n[2/3] 📝 Generating {len(project_plan['files'])} files...")
         generated_files = self.generate_files(project_plan)
         
-        # Step 4: Write files to disk
-        print(f"\n[3/4] 💾 Writing files to disk...")
+        # Step 3.5: Write files to disk (before validation)
+        print(f"\n[3/3] 💾 Writing files to disk...")
         self.write_files(generated_files)
         
-        # Step 5: Final review
-        print(f"\n[4/4] ✅ Final review...")
-        self.final_review(generated_files)
+        # Step 4: Validate and auto-fix
+        generated_files = self.validate_and_fix(user_request, generated_files)
         
         print(f"\n{'='*60}")
         print(f"🎉 PROJECT COMPLETE!")
@@ -344,8 +343,6 @@ FORMATTING RULES:
             return
         
         print(f"  Found {len(current_files)} files")
-        for f in current_files[:10]:
-            print(f"    - {f}")
         
         # Step 2: Plan modification
         print(f"\n[2/3] 🧠 Planning modifications...")
@@ -357,7 +354,11 @@ FORMATTING RULES:
         
         # Step 3: Execute modifications
         print(f"\n[3/3] ⚡ Executing modifications...")
-        self._execute_modifications(plan, current_files)
+        modified_files = self._execute_modifications(plan, current_files)
+        
+        # Step 4: Validate modifications
+        if modified_files:
+            self.validate_and_fix(modification_request, modified_files)
         
         print(f"\n{'='*60}")
         print(f"✅ MODIFICATION COMPLETE!")
@@ -440,14 +441,15 @@ Do NOT skip files that need changes. If no files need changes, return {{"changes
         print("  [warn] Could not parse changes, returning empty")
         return {"changes": []}
     
-    def _execute_modifications(self, plan: dict, current_files: list):
-        """Execute the planned modifications"""
+    def _execute_modifications(self, plan: dict, current_files: list) -> list:
+        """Execute the planned modifications and return modified files"""
         changes = plan.get('changes', [])
+        modified_files = []
         
         if not changes:
             print("  No changes detected")
             print("  [debug] Plan was:", plan)
-            return
+            return modified_files
         
         for i, change in enumerate(changes, 1):
             action = change.get('action', 'modify')
@@ -464,6 +466,12 @@ Do NOT skip files that need changes. If no files need changes, return {{"changes
                 if filepath.exists():
                     filepath.unlink()
                     print(f"  └─ ✓ Deleted {filepath}")
+                    modified_files.append({
+                        'path': filepath_str,
+                        'description': description,
+                        'type': 'deleted',
+                        'content': ''
+                    })
                 else:
                     print(f"  ⚠️ File not found: {filepath}")
             
@@ -482,9 +490,18 @@ Output the COMPLETE new file content."""
                 
                 new_content = self.generator.generate(prompt, max_tokens=4000, temperature=0.2)
                 
-                with open(filepath, 'w') as f:
-                    f.write(new_content)
-                print(f"  └─ ✓ Modified {filepath_str}")
+                if new_content and len(new_content.strip()) > 0:
+                    with open(filepath, 'w') as f:
+                        f.write(new_content)
+                    print(f"  └─ ✓ Modified {filepath_str} ({len(new_content)} chars)")
+                    modified_files.append({
+                        'path': filepath_str,
+                        'description': description,
+                        'type': 'modified',
+                        'content': new_content
+                    })
+                else:
+                    print(f"  ⚠️ Failed to modify {filepath_str}")
             
             elif action == 'create':
                 prompt = f"""Create this new file:
@@ -496,13 +513,28 @@ Output complete file content."""
                 
                 content = self.generator.generate(prompt, max_tokens=3000, temperature=0.2)
                 
-                filepath.parent.mkdir(parents=True, exist_ok=True)
-                with open(filepath, 'w') as f:
-                    f.write(content)
-                print(f"  └─ ✓ Created {filepath_str}")
+                if content and len(content.strip()) > 0:
+                    filepath.parent.mkdir(parents=True, exist_ok=True)
+                    with open(filepath, 'w') as f:
+                        f.write(content)
+                    print(f"  └─ ✓ Created {filepath_str} ({len(content)} chars)")
+                    modified_files.append({
+                        'path': filepath_str,
+                        'description': description,
+                        'type': 'created',
+                        'content': content
+                    })
+                else:
+                    print(f"  ⚠️ Failed to create {filepath_str}")
             
             else:
                 print(f"  ⚠️ Could not process: {action} on {filepath_str}")
+            
+            # Small delay to avoid rate limits
+            import time
+            time.sleep(1)
+        
+        return modified_files
 
     def _ensure_readme(self, plan: dict, user_request: str) -> dict:
         """Ensure README.md is always in the plan"""
@@ -523,3 +555,206 @@ Output complete file content."""
             })
         
         return plan
+
+    def validate_and_fix(self, user_request: str, generated_files: list, max_iterations: int = 3):
+        """GPT-OSS-120B reviews code and auto-fixes if mismatched"""
+        print(f"\n{'='*60}")
+        print(f"🔍 VALIDATION & AUTO-FIX")
+        print(f"{'='*60}")
+        
+        all_issues = []
+        
+        for iteration in range(max_iterations):
+            print(f"\n[Validation round {iteration + 1}/{max_iterations}]")
+            
+            # Step 1: Review all files
+            issues = self._validate_project(user_request, generated_files)
+            
+            if not issues:
+                print(f"\n✅ Project matches the request perfectly!")
+                # Save report with no issues
+                self.save_validation_report(user_request, all_issues, generated_files)
+                return generated_files
+            
+            all_issues.extend(issues)
+            
+            print(f"\n⚠️ Found {len(issues)} issues:")
+            for issue in issues:
+                print(f"  - {issue['file']}: {issue['problem']}")
+            
+            # Step 2: Fix issues
+            print(f"\n🔧 Auto-fixing issues...")
+            generated_files = self._fix_issues(user_request, generated_files, issues)
+        
+        print(f"\n⚠️ Max iterations reached. Some issues may remain.")
+        # Save report with remaining issues
+        self.save_validation_report(user_request, all_issues, generated_files)
+        return generated_files
+    
+    def _validate_project(self, user_request: str, generated_files: list) -> list:
+        """GPT-OSS-120B checks if code matches the request"""
+        
+        # Build summary of all files
+        files_summary = []
+        for f in generated_files:
+            files_summary.append(f"""
+File: {f['path']}
+Type: {f['type']}
+Description: {f['description']}
+Content:
+{f['content'][:2000]}  # First 2000 chars per file
+---""")
+        
+        files_text = "\n".join(files_summary)
+        
+        prompt = f"""You are a strict code reviewer. Check if the generated project matches this request:
+
+USER REQUEST: {user_request}
+
+GENERATED FILES:
+{files_text}
+
+Check for:
+1. Missing features from the request
+2. Incorrect implementations
+3. Files that don't do what they should
+4. Missing endpoints/functions
+5. Incomplete code
+
+Return JSON:
+{{"issues": [{{"file": "path", "problem": "what's wrong", "fix": "what to change"}}]}}
+
+If everything matches perfectly, return: {{"issues": []}}
+
+Be STRICT but fair. Only flag REAL issues."""
+        
+        response = self.orchestrator.generate(prompt, max_tokens=2000, temperature=0.2)
+        
+        # Parse JSON
+        import json
+        import re
+        
+        try:
+            result = json.loads(response)
+            return result.get('issues', [])
+        except:
+            pass
+        
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            try:
+                result = json.loads(json_match.group())
+                return result.get('issues', [])
+            except:
+                pass
+        
+        return []
+    
+    def _fix_issues(self, user_request: str, generated_files: list, issues: list) -> list:
+        """Fix the identified issues"""
+        fixed_files = list(generated_files)
+        
+        # Group issues by file
+        file_issues = {}
+        for issue in issues:
+            filepath = issue.get('file', '')
+            if filepath not in file_issues:
+                file_issues[filepath] = []
+            file_issues[filepath].append(issue)
+        
+        for i, (filepath, file_issue_list) in enumerate(file_issues.items(), 1):
+            print(f"\n  [{i}/{len(file_issues)}] Fixing {filepath}...")
+            
+            # Find the file in generated_files
+            file_data = None
+            file_index = None
+            for idx, f in enumerate(fixed_files):
+                if f['path'] == filepath:
+                    file_data = f
+                    file_index = idx
+                    break
+            
+            if not file_data:
+                print(f"  ⚠️ File not found: {filepath}")
+                continue
+            
+            # Build fix prompt
+            problems = "\n".join([f"- {issue['problem']}: {issue['fix']}" for issue in file_issue_list])
+            
+            prompt = f"""Fix this file to match the user request.
+
+USER REQUEST: {user_request}
+
+FILE: {filepath}
+DESCRIPTION: {file_data['description']}
+
+ISSUES TO FIX:
+{problems}
+
+CURRENT CONTENT:
+{file_data['content']}
+
+Output the COMPLETE fixed file content. No explanations."""
+            
+            new_content = self.generator.generate(prompt, max_tokens=4000, temperature=0.2)
+            
+            if new_content and len(new_content.strip()) > 0:
+                fixed_files[file_index]['content'] = new_content
+                
+                # Write to disk
+                filepath_obj = self.output_dir / filepath
+                filepath_obj.parent.mkdir(parents=True, exist_ok=True)
+                with open(filepath_obj, 'w') as f:
+                    f.write(new_content)
+                
+                print(f"  ✓ Fixed {filepath} ({len(new_content)} chars)")
+            else:
+                print(f"  ⚠️ Failed to fix {filepath}")
+            
+            import time
+            time.sleep(1)
+        
+        return fixed_files
+
+    def save_validation_report(self, user_request: str, issues: list, final_files: list):
+        """Save validation report to file"""
+        report_path = self.output_dir / "VALIDATION_REPORT.md"
+        
+        report = f"""# Validation Report
+
+## Request
+{user_request}
+
+## Validation Summary
+{'✅ All checks passed - project matches request perfectly' if not issues else f'⚠️ Found and fixed {len(issues)} issues'}
+
+## Files Reviewed
+{chr(10).join([f'- {f["path"]} ({len(f.get("content", ""))} chars)' for f in final_files])}
+
+## Issues Found & Fixed
+"""
+        
+        if issues:
+            for i, issue in enumerate(issues, 1):
+                report += f"""
+### Issue {i}
+- **File:** `{issue.get('file', 'N/A')}`
+- **Problem:** {issue.get('problem', 'N/A')}
+- **Fix Applied:** {issue.get('fix', 'N/A')}
+"""
+        else:
+            report += "\nNo issues found. Project matches request.\n"
+        
+        report += f"""
+## Generated
+- Timestamp: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- Total files: {len(final_files)}
+
+---
+*Report generated by Qwen Code Agent V5*
+"""
+        
+        with open(report_path, 'w') as f:
+            f.write(report)
+        
+        print(f"\n  📄 Validation report saved: {report_path}")
