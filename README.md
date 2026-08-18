@@ -1,4 +1,4 @@
-# qwen-code-agent
+# Qanwas
 
 **V5**
 
@@ -23,7 +23,7 @@ Just describe what you want, and watch it build.
 ## Quick install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/ParthParikh-240906/qwen-code-agent/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/ParthParikh-240906/Qanwas/main/install.sh | bash
 ```
 
 Then add your Groq API key to `~/.qwen-code-agent/.env` and run `source ~/.zshrc`.
@@ -56,7 +56,7 @@ qwen-code-agent/
 ### One-line install (recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/ParthParikh-240906/qwen-code-agent/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/ParthParikh-240906/Qanwas/main/install.sh | bash
 ```
 
 ### Manual setup

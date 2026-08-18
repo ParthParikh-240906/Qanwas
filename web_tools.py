@@ -1,4 +1,4 @@
-"""Web search and content fetching for qwen-code-agent V2"""
+"""Web search and content fetching for Qanwas"""
 import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional

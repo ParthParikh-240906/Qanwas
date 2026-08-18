@@ -1,23 +1,7 @@
 #!/usr/bin/env python3
 """
-qwen-code-agent
-A thin CLI wrapper around a local Ollama-served Qwen2.5-Coder-7B model.
+Qanwas
 
-Why this exists:
-    Small local coder models don't have filesystem/tool access. If you ask
-    them to "read main.py and summarize it", there's nothing that actually
-    reads the file - the model just free-associates on the raw instruction.
-    This script does the "tool call" for you: it reads the file, wraps it
-    in a template the model responds well to, and streams the result back.
-
-Usage:
-    python agent.py summarize path/to/file.py
-    python agent.py explain path/to/file.py
-    python agent.py generate "a fastapi GET /health endpoint"
-    python agent.py qsearch "what is langchain"
-    python agent.py qresearch "fastapi vs flask"
-
-Config (model name, host, temperature, etc.) lives in config.py.
 """
 
 import sys
@@ -367,7 +351,7 @@ def cmd_modify(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Local agent that runs precise, templated prompts against Qwen2.5-Coder-7B via Ollama."
+        description="Qanwas"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -10,8 +10,6 @@ BASE_DIR = Path(__file__).parent
 PROMPTS_DIR = BASE_DIR / "prompts"
 
 # Ollama Settings
-MODEL_NAME = "qwen2.5-coder:7b"
-OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_TEMPERATURE = 0.2
 MAX_FILE_CHARS = 50000
 
