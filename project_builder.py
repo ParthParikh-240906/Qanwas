@@ -11,10 +11,16 @@ from groq_client import GroqClient
 class ProjectBuilder:
     def __init__(self, output_dir="."):
         self.output_dir = Path(output_dir)
+        
+        # Primary key agents
         self.orchestrator = GroqClient(model="openai/gpt-oss-120b")
         self.frontend_agent = GroqClient(model="openai/gpt-oss-20b")
-        self.backend_agent = GroqClient(model="openai/gpt-oss-20b")
         self.config_agent = GroqClient(model="openai/gpt-oss-120b")
+        
+        # Backup key for backend (uses second API key)
+        self.backend_agent = GroqClient(model="openai/gpt-oss-20b", use_backup=True)
+        
+        # Also for fixing
         self.generator = GroqClient(model="openai/gpt-oss-20b")
     
     def build_project(self, user_request: str):
