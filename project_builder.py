@@ -12,16 +12,24 @@ class ProjectBuilder:
     def __init__(self, output_dir="."):
         self.output_dir = Path(output_dir)
         
+        # Check if backup key exists
+        self.has_backup_key = bool(config.GROQ_API_KEY_2)
+        
         # Primary key agents
         self.orchestrator = GroqClient(model="openai/gpt-oss-120b")
         self.frontend_agent = GroqClient(model="openai/gpt-oss-20b")
         self.config_agent = GroqClient(model="openai/gpt-oss-120b")
         
-        # Backup key for backend (uses second API key)
-        self.backend_agent = GroqClient(model="openai/gpt-oss-20b", use_backup=True)
+        # Backend uses backup key if available
+        if self.has_backup_key:
+            self.backend_agent = GroqClient(model="openai/gpt-oss-20b", use_backup=True)
+        else:
+            self.backend_agent = GroqClient(model="openai/gpt-oss-20b")
         
-        # Also for fixing
+        # Generator for fixes (uses primary, switches to backup if needed)
         self.generator = GroqClient(model="openai/gpt-oss-20b")
+        
+        print(f"  [{'✅' if self.has_backup_key else '⚠️'}] Backup API key: {'Available' if self.has_backup_key else 'Not found - using single key with delays'}")
     
     def build_project(self, user_request: str):
         """Main entry point - build entire project"""
@@ -196,7 +204,7 @@ Return ONLY valid JSON:
         print()
     
     def generate_files_parallel(self, plan: dict) -> list:
-        """Generate files using 3 parallel agents with staggered start"""
+        """Generate files using parallel agents with smart key distribution"""
         
         frontend_files = [f for f in plan['files'] if f['type'] == 'frontend']
         backend_files = [f for f in plan['files'] if f['type'] == 'backend']
@@ -204,44 +212,55 @@ Return ONLY valid JSON:
         
         print(f"\n  📁 Distributing work to agents:")
         if frontend_files:
-            print(f"    🎨 Frontend Agent (20B): {len(frontend_files)} files")
+            print(f"    🎨 Frontend Agent (20B - Key 1): {len(frontend_files)} files")
         if backend_files:
-            print(f"    ⚙️  Backend Agent (20B): {len(backend_files)} files")
+            key_label = "Key 2" if self.has_backup_key else "Key 1"
+            print(f"    ⚙️  Backend Agent (20B - {key_label}): {len(backend_files)} files")
         if config_files:
-            print(f"    🔧 Config Agent (120B): {len(config_files)} files")
+            print(f"    🔧 Config Agent (120B - Key 1): {len(config_files)} files")
         
         print(f"\n  🚀 Launching parallel agents...")
-        print(f"  ⏱️  Staggered start: Config+Frontend first, Backend after 30s\n")
+        
+        if not self.has_backup_key:
+            print(f"  ⏱️  Single key detected - 30s delay for backend\n")
+        else:
+            print(f"  ⚡ Dual keys detected - no delay needed!\n")
         
         all_files = []
-        
-        import concurrent.futures
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = {}
             
-            # Start Config (120B) immediately - separate limit
+            # Config (120B) - Key 1, start immediately
             if config_files:
                 futures['config'] = executor.submit(
                     self._generate_group, config_files, plan, "config", self.config_agent
                 )
-                print(f"  🚀 Config Agent launched (120B)")
+                print(f"  🚀 Config Agent launched (Key 1)")
             
-            # Start Frontend (20B) immediately - uses 6K of 8K limit
+            # Frontend (20B) - Key 1, start immediately
             if frontend_files:
                 futures['frontend'] = executor.submit(
                     self._generate_group, frontend_files, plan, "frontend", self.frontend_agent
                 )
-                print(f"  🚀 Frontend Agent launched (20B)")
+                print(f"  🚀 Frontend Agent launched (Key 1)")
             
-            # Wait 30 seconds before starting Backend (20B)
+            # Backend (20B) - Key 2 if available, else wait 30s
             if backend_files:
-                print(f"  ⏳ Waiting 30s before launching Backend Agent...")
-                time.sleep(30)
-                futures['backend'] = executor.submit(
-                    self._generate_group, backend_files, plan, "backend", self.backend_agent
-                )
-                print(f"  🚀 Backend Agent launched (20B)")
+                if self.has_backup_key:
+                    # No delay - different key
+                    futures['backend'] = executor.submit(
+                        self._generate_group, backend_files, plan, "backend", self.backend_agent
+                    )
+                    print(f"  🚀 Backend Agent launched (Key 2)")
+                else:
+                    # Wait 30s - same key, avoid rate limit
+                    print(f"  ⏳ Waiting 30s before Backend Agent (single key)...")
+                    time.sleep(30)
+                    futures['backend'] = executor.submit(
+                        self._generate_group, backend_files, plan, "backend", self.backend_agent
+                    )
+                    print(f"  🚀 Backend Agent launched (Key 1)")
             
             # Collect results
             for category, future in futures.items():
@@ -564,9 +583,9 @@ IMPORTANT: Every file must be COMPLETE. No truncation."""
         print(f"\n  📄 Validation report saved: {report_path}")
     
     def modify_project(self, modification_request: str):
-        """Modify existing project"""
+        """Modify existing project using parallel agents"""
         print(f"\n{'='*60}")
-        print(f"🔧 PROJECT MODIFICATION")
+        print(f"🔧 PROJECT MODIFICATION - MULTI-AGENT")
         print(f"Request: {modification_request}")
         print(f"{'='*60}\n")
         
@@ -582,12 +601,13 @@ IMPORTANT: Every file must be COMPLETE. No truncation."""
         print(f"\n[2/3] 🧠 Planning modifications...")
         plan = self._plan_modification(modification_request, current_files)
         
+        changes = plan.get('changes', [])
         print(f"\n  Changes to make:")
-        for change in plan.get('changes', []):
+        for change in changes:
             print(f"    - {change['action']}: {change['file']}")
         
-        print(f"\n[3/3] ⚡ Executing modifications...")
-        modified_files = self._execute_modifications(plan, current_files)
+        print(f"\n[3/3] ⚡ Executing modifications in parallel...")
+        modified_files = self._execute_modifications_parallel(plan, current_files)
         
         if modified_files:
             self.validate_and_fix(modification_request, modified_files)
@@ -595,6 +615,136 @@ IMPORTANT: Every file must be COMPLETE. No truncation."""
         print(f"\n{'='*60}")
         print(f"✅ MODIFICATION COMPLETE!")
         print(f"{'='*60}\n")
+    
+    def _execute_modifications_parallel(self, plan: dict, current_files: list) -> list:
+        """Execute modifications using parallel agents"""
+        changes = plan.get('changes', [])
+        modified_files = []
+        
+        if not changes:
+            print("  No changes detected")
+            return modified_files
+        
+        # Group changes by file type
+        frontend_changes = []
+        backend_changes = []
+        config_changes = []
+        
+        for change in changes:
+            filepath = change.get('file', '')
+            if 'frontend' in filepath or filepath.endswith(('.html', '.css', '.js')):
+                frontend_changes.append(change)
+            elif 'backend' in filepath or 'app/' in filepath or filepath.endswith('.py'):
+                backend_changes.append(change)
+            else:
+                config_changes.append(change)
+        
+        print(f"\n  📁 Distributing changes:")
+        if frontend_changes:
+            print(f"    🎨 Frontend: {len(frontend_changes)} files")
+        if backend_changes:
+            print(f"    ⚙️  Backend: {len(backend_changes)} files")
+        if config_changes:
+            print(f"    🔧 Config: {len(config_changes)} files")
+        
+        # Execute in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {}
+            
+            if frontend_changes:
+                futures['frontend'] = executor.submit(
+                    self._execute_change_group, frontend_changes, "frontend", self.frontend_agent
+                )
+            
+            if backend_changes:
+                futures['backend'] = executor.submit(
+                    self._execute_change_group, backend_changes, "backend", self.backend_agent
+                )
+            
+            if config_changes:
+                futures['config'] = executor.submit(
+                    self._execute_change_group, config_changes, "config", self.config_agent
+                )
+            
+            for category, future in futures.items():
+                try:
+                    files = future.result()
+                    modified_files.extend(files)
+                    print(f"\n  ✅ {category.upper()} modifications complete: {len(files)} files")
+                except Exception as e:
+                    print(f"\n  ❌ {category} modifications failed: {e}")
+        
+        return modified_files
+    
+    def _execute_change_group(self, changes: list, category: str, agent: GroqClient) -> list:
+        """Execute a group of changes using one agent"""
+        modified = []
+        
+        for i, change in enumerate(changes, 1):
+            action = change.get('action', 'modify')
+            filepath_str = change.get('file', '')
+            description = change.get('description', '')
+            
+            print(f"\n  [{category}] [{i}/{len(changes)}] {action}: {filepath_str}")
+            
+            filepath = self.output_dir / filepath_str
+            
+            if action == 'modify' and filepath.exists():
+                current_content = filepath.read_text()
+                
+                prompt = f"""Modify this file:
+
+File: {filepath_str}
+Change needed: {description}
+
+Current content:
+{current_content}
+
+Output the COMPLETE new file content."""
+                
+                new_content = agent.generate_silent(prompt, max_tokens=6000, temperature=0.2)
+                
+                if new_content and len(new_content.strip()) > 0:
+                    with open(filepath, 'w') as f:
+                        f.write(new_content)
+                    print(f"  ✓ [{category}] Modified {filepath_str}")
+                    modified.append({
+                        'path': filepath_str,
+                        'description': description,
+                        'type': 'modified',
+                        'content': new_content
+                    })
+            
+            elif action == 'create':
+                prompt = f"""Create this new file:
+
+File: {filepath_str}
+Purpose: {description}
+
+Output complete file content."""
+                
+                content = agent.generate_silent(prompt, max_tokens=6000, temperature=0.2)
+                
+                if content and len(content.strip()) > 0:
+                    filepath.parent.mkdir(parents=True, exist_ok=True)
+                    with open(filepath, 'w') as f:
+                        f.write(content)
+                    print(f"  ✓ [{category}] Created {filepath_str}")
+                    modified.append({
+                        'path': filepath_str,
+                        'description': description,
+                        'type': 'created',
+                        'content': content
+                    })
+            
+            elif action == 'delete':
+                if filepath.exists():
+                    filepath.unlink()
+                    print(f"  ✓ [{category}] Deleted {filepath_str}")
+            
+            time.sleep(0.5)
+        
+        return modified
     
     def _scan_project(self) -> list:
         """Scan current directory for existing files"""
