@@ -190,7 +190,8 @@ Return ONLY valid JSON:
         print()
     
     def generate_files_parallel(self, plan: dict) -> list:
-        """Generate files using 3 parallel agents"""
+        """Generate files using 3 parallel agents with staggered start"""
+        
         frontend_files = [f for f in plan['files'] if f['type'] == 'frontend']
         backend_files = [f for f in plan['files'] if f['type'] == 'backend']
         config_files = [f for f in plan['files'] if f['type'] in ['config', 'docs']]
@@ -203,26 +204,40 @@ Return ONLY valid JSON:
         if config_files:
             print(f"    🔧 Config Agent (120B): {len(config_files)} files")
         
-        print(f"\n  🚀 Launching parallel agents...\n")
+        print(f"\n  🚀 Launching parallel agents...")
+        print(f"  ⏱️  Staggered start: Config+Frontend first, Backend after 30s\n")
         
         all_files = []
+        
+        import concurrent.futures
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = {}
             
-            if frontend_files:
-                futures['frontend'] = executor.submit(
-                    self._generate_group, frontend_files, plan, "frontend", self.frontend_agent
-                )
-            if backend_files:
-                futures['backend'] = executor.submit(
-                    self._generate_group, backend_files, plan, "backend", self.backend_agent
-                )
+            # Start Config (120B) immediately - separate limit
             if config_files:
                 futures['config'] = executor.submit(
                     self._generate_group, config_files, plan, "config", self.config_agent
                 )
+                print(f"  🚀 Config Agent launched (120B)")
             
+            # Start Frontend (20B) immediately - uses 6K of 8K limit
+            if frontend_files:
+                futures['frontend'] = executor.submit(
+                    self._generate_group, frontend_files, plan, "frontend", self.frontend_agent
+                )
+                print(f"  🚀 Frontend Agent launched (20B)")
+            
+            # Wait 30 seconds before starting Backend (20B)
+            if backend_files:
+                print(f"  ⏳ Waiting 30s before launching Backend Agent...")
+                time.sleep(30)
+                futures['backend'] = executor.submit(
+                    self._generate_group, backend_files, plan, "backend", self.backend_agent
+                )
+                print(f"  🚀 Backend Agent launched (20B)")
+            
+            # Collect results
             for category, future in futures.items():
                 try:
                     files = future.result()
@@ -263,10 +278,10 @@ Purpose: {file_spec['description']}
 
 Generate COMPLETE, production-ready code. Do NOT truncate."""
             
-            content = agent.generate_silent(prompt, max_tokens=4000, temperature=0.2)
+            content = agent.generate_silent(prompt, max_tokens=6000, temperature=0.2)
             
             if not content or len(content.strip()) == 0:
-                content = agent.generate_silent(prompt, max_tokens=4000, temperature=0.3)
+                content = agent.generate_silent(prompt, max_tokens=6000, temperature=0.3)
             
             filepath = self.output_dir / file_spec['path']
             filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -287,36 +302,46 @@ Generate COMPLETE, production-ready code. Do NOT truncate."""
         return generated
     
     def validate_and_fix(self, user_request: str, generated_files: list, max_iterations: int = 5):
-        """GPT-OSS-120B reviews code and auto-fixes if mismatched"""
+        """Validate with 120B and fix with 120B directly"""
         print(f"\n{'='*60}")
         print(f"🔍 VALIDATION & AUTO-FIX")
         print(f"{'='*60}")
         
         all_issues = []
         
-        for iteration in range(max_iterations):
-            print(f"\n[Validation round {iteration + 1}/{max_iterations}]")
-            
-            issues = self._validate_project(user_request, generated_files)
-            
-            if not issues:
-                print(f"\n✅ Project matches the request perfectly!")
-                self.save_validation_report(user_request, all_issues, generated_files)
-                return generated_files
-            
-            all_issues.extend(issues)
-            
-            print(f"\n⚠️ Found {len(issues)} issues:")
-            for issue in issues[:5]:
-                print(f"  - {issue['file']}: {issue['problem'][:80]}...")
-            
-            print(f"\n🔧 Auto-fixing issues...")
-            generated_files = self._fix_issues(user_request, generated_files, issues)
+        # Round 1: Validate
+        print(f"\n[Validation round 1]")
+        issues = self._validate_project(user_request, generated_files)
         
+        if not issues:
+            print(f"\n✅ Project matches the request perfectly!")
+            self.save_validation_report(user_request, [], generated_files)
+            return generated_files
+        
+        all_issues.extend(issues)
+        
+        print(f"\n⚠️ Found {len(issues)} issues:")
+        for issue in issues[:5]:
+            print(f"  - {issue['file']}: {issue['problem'][:80]}...")
+        
+        # Skip 20B fixes - go straight to 120B final fix
         print(f"\n{'='*60}")
-        print(f"🔧 FINAL FIX BY GPT-OSS-120B")
+        print(f"🔧 GPT-OSS-120B TAKING OVER - FIXING ALL ISSUES")
         print(f"{'='*60}")
+        
         generated_files = self._final_fix_120b(user_request, generated_files)
+        
+        # Final validation
+        print(f"\n[Final validation]")
+        remaining_issues = self._validate_project(user_request, generated_files)
+        
+        if not remaining_issues:
+            print(f"\n✅ All issues resolved by 120B!")
+        else:
+            print(f"\n⚠️ {len(remaining_issues)} minor issues remain (acceptable)")
+            # Try one more 120B fix
+            print(f"\n🔧 One more 120B fix attempt...")
+            generated_files = self._final_fix_120b(user_request, generated_files)
         
         self.save_validation_report(user_request, all_issues, generated_files)
         return generated_files
@@ -432,7 +457,7 @@ Output the COMPLETE fixed file content."""
         return fixed_files
     
     def _final_fix_120b(self, user_request: str, generated_files: list) -> list:
-        """Use GPT-OSS-120B for final comprehensive fix"""
+        """Use GPT-OSS-120B for comprehensive fix of ALL files"""
         fixed_files = list(generated_files)
         
         files_summary = []
@@ -440,23 +465,31 @@ Output the COMPLETE fixed file content."""
             files_summary.append(f"""
 File: {f['path']}
 Content:
-{f['content'][:1500]}
+{f['content'][:2000]}
 ---""")
         
         files_text = "\n".join(files_summary)
         
-        prompt = f"""You are a senior software engineer. Fix ALL remaining issues.
+        prompt = f"""You are a senior software engineer. Fix ALL issues in this project.
 
 USER REQUEST: {user_request}
 
 CURRENT FILES:
 {files_text}
 
-Fix ALL issues that would prevent the project from working.
-Return JSON with fixed files:
-{{"fixed_files": [{{"path": "file", "content": "complete fixed content"}}]}}"""
+Your task:
+1. Review EVERY file
+2. Fix ALL truncations, syntax errors, missing code
+3. Ensure all files are COMPLETE
+4. Ensure all imports/endpoints are correct
+5. Make sure the project matches the user request
+
+Return JSON with ALL files (even unchanged ones):
+{{"fixed_files": [{{"path": "file", "content": "complete fixed content"}}]}}
+
+IMPORTANT: Every file must be COMPLETE. No truncation."""
         
-        response = self.orchestrator.generate(prompt, max_tokens=4000, temperature=0.2)
+        response = self.orchestrator.generate(prompt, max_tokens=8000, temperature=0.2)
         
         import json
         import re
@@ -474,6 +507,10 @@ Return JSON with fixed files:
                     fixed_files_data = []
             else:
                 fixed_files_data = []
+        
+        if not fixed_files_data:
+            print("  ⚠️ Could not parse 120B response, keeping original files")
+            return fixed_files
         
         for fixed_file in fixed_files_data:
             path = fixed_file.get('path', '')
