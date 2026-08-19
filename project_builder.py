@@ -7,6 +7,7 @@ import threading
 import concurrent.futures
 from pathlib import Path
 from groq_client import GroqClient
+import config
 
 class ProjectBuilder:
     def __init__(self, output_dir="."):
